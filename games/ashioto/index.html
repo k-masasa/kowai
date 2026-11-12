@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>あしおと</title>
+  </head>
+  <body>
+    <div id="title" class="overlay">
+      <h1>あしおと</h1>
+      <p id="greeting"></p>
+      <p class="start">クリックで始める</p>
+      <p class="note">WASD で歩く / マウスで見る<br />音が出ます。ヘッドホンをおすすめします。</p>
+    </div>
+    <div id="pause" class="overlay hidden">
+      <p class="start">クリックで戻る</p>
+    </div>
+    <div id="ending" class="overlay hidden">
+      <p id="ending-text"></p>
+      <p id="ending-next" class="start hidden">クリックでタイトルへ</p>
+    </div>
+    <p id="whisper"></p>
+    <div id="fade"></div>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
