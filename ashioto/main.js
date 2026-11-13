@@ -13,6 +13,9 @@ import { createSound } from './sound.js'
 const EYE = 1.55
 const WALK = 1.15
 const STRIDE = 0.68
+// Shift を押している間の速さと歩幅
+const RUN = 2.3
+const RUN_STRIDE = 0.86
 const STORE = 'kowai.ashioto'
 // 階段でこれだけ下りると死ぬ (m)
 const BACK_LIMIT = 6
@@ -93,6 +96,7 @@ const dayState = () => ({
   stride: 0,
   bob: 0,
   walking: false,
+  running: false,
   idle: 0,
   dark: false,
   startedAt: new Date(),
@@ -612,10 +616,10 @@ const echoVolume = () => {
 }
 
 /**
- * 1歩分の足音を鳴らす
+ * 1歩分の足音を鳴らす。走っている時は大きい
  */
 const footstep = () => {
-  sound.step(0.5)
+  sound.step(S.running ? 0.75 : 0.5)
   const echo = echoVolume()
   if (echo > 0) sound.step(echo, { muffle: 0.65, when: 0.31 + Math.random() * 0.03 })
 }
@@ -741,7 +745,7 @@ const velocity = new THREE.Vector3()
 const before = new THREE.Vector3()
 
 /**
- * 歩いた距離に合わせて、足音を鳴らす
+ * 歩いた距離に合わせて、足音を鳴らす。S.stride は、何歩進んだか
  */
 const walkSounds = (dist) => {
   if (dist < 0.0005) {
@@ -751,9 +755,9 @@ const walkSounds = (dist) => {
   }
   S.walking = true
   S.idle = 0
-  const prev = Math.floor(S.stride / STRIDE)
-  S.stride += dist
-  if (Math.floor(S.stride / STRIDE) !== prev) footstep()
+  const prev = Math.floor(S.stride)
+  S.stride += dist / (S.running ? RUN_STRIDE : STRIDE)
+  if (Math.floor(S.stride) !== prev) footstep()
 }
 
 /**
@@ -783,7 +787,10 @@ const move = (dt) => {
   side.set(Math.cos(S.yaw), 0, -Math.sin(S.yaw))
   velocity.set(0, 0, 0).addScaledVector(forward, f).addScaledVector(side, s)
   if (velocity.lengthSq() > 1) velocity.normalize()
-  velocity.multiplyScalar(f < 0 ? WALK * 0.65 : WALK)
+  S.running = f >= 0 && pressed('ShiftLeft', 'ShiftRight') === 1
+  let speed = S.running ? RUN : WALK
+  if (f < 0) speed = WALK * 0.65
+  velocity.multiplyScalar(speed)
   before.copy(S.pos)
   const feet = S.feet
   S.pos.addScaledVector(velocity, dt)
@@ -1104,7 +1111,8 @@ const updateHum = (hum) => {
  * カメラをプレイヤーの目の位置に置く。歩いている間は、少し頭が揺れる
  */
 const placeCamera = (dt) => {
-  const target = S.walking ? -Math.abs(Math.sin((S.stride / STRIDE) * Math.PI)) * 0.026 : 0
+  const sway = S.running ? 0.04 : 0.026
+  const target = S.walking ? -Math.abs(Math.sin(S.stride * Math.PI)) * sway : 0
   S.bob += (target - S.bob) * Math.min(1, dt * 12)
   camera.position.set(S.pos.x, S.feet + EYE + S.bob, S.pos.z)
   camera.rotation.set(S.pitch, S.yaw, 0, 'YXZ')
