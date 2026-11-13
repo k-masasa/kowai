@@ -4,11 +4,13 @@ import {
   asphaltTexture,
   ceilingTexture,
   clockFace,
+  clothTexture,
   concreteTexture,
   doorLeafTexture,
   exitTexture,
   floorSign,
   floorTexture,
+  flooringTexture,
   frostedTexture,
   hedgeTexture,
   labelTexture,
@@ -19,7 +21,9 @@ import {
   noticePaper,
   paverTexture,
   plateAtlas,
+  roofWarnTexture,
   signTexture,
+  steelDoorTexture,
   stoneTileTexture,
   tileTexture,
   vendingTexture,
@@ -60,6 +64,10 @@ export const floorY = (f) => (f - 1) * FH
  * f 階の i 番目 (西から0始まり) の部屋のドアの中心の x
  */
 export const doorX = (i) => HX1 + UNIT * i + 0.75
+
+// 412号室の玄関と廊下が入る範囲。西の壁、玄関の東の壁、突き当たりの壁、玄関ドアのある壁
+const HOME_X = doorX(UNITS - 1)
+const ROOM = { x0: HOME_X - 0.5, x1: HOME_X + 1.0, z0: CZ - 5.2, z1: CZ - 0.2 }
 
 /**
  * 区画を作る。足元の高さを返す関数 h を持つ
@@ -145,6 +153,28 @@ const box = (b, mat, x0, x1, y0, y1, z0, z1) => {
 }
 
 /**
+ * 箱から、中の直方体の部分をくり抜いて置く。くり抜いた穴の内側の面は描かないので、中から見る壁は別に置く
+ * @param outer - 箱の [x0, x1, y0, y1, z0, z1]
+ * @param hole - くり抜く部分の [x0, x1, y0, y1, z0, z1]。x と y は箱の内側にあること
+ */
+const boxWithout = (b, mat, outer, hole) => {
+  const [x0, x1, y0, y1, z0, z1] = outer
+  const [hx0, hx1, hy0, hy1, hz0, hz1] = hole
+  const cz0 = Math.max(z0, hz0)
+  const cz1 = Math.min(z1, hz1)
+  if (cz0 >= cz1) {
+    box(b, mat, x0, x1, y0, y1, z0, z1)
+    return
+  }
+  box(b, mat, x0, hx0, y0, y1, z0, z1)
+  box(b, mat, hx1, x1, y0, y1, z0, z1)
+  box(b, mat, hx0, hx1, y0, hy0, z0, z1)
+  box(b, mat, hx0, hx1, hy1, y1, z0, z1)
+  if (z0 < cz0) box(b, mat, hx0, hx1, hy0, hy1, z0, cz0)
+  if (cz1 < z1) box(b, mat, hx0, hx1, hy0, hy1, cz1, z1)
+}
+
+/**
  * x が一定の壁の面を置く
  * @param dir - +x を向くなら 1、-x を向くなら -1
  */
@@ -178,6 +208,38 @@ const flat = (b, mat, y, x0, x1, z0, z1, dir) => {
     mat,
     at((x0 + x1) / 2, y, (z0 + z1) / 2, (-dir * Math.PI) / 2),
   )
+}
+
+// 鎖の輪。向きを90度ずつ変えて、交互につなぐ
+const LINK_A = new THREE.TorusGeometry(0.009, 0.0025, 5, 10).scale(1.5, 1, 1)
+const LINK_B = LINK_A.clone().rotateX(Math.PI / 2)
+const X_AXIS = new THREE.Vector3(1, 0, 0)
+
+/**
+ * 輪を1つ、中心の点と、つながる向きで置く
+ */
+const link = (b, mat, k, center, dir) => {
+  Q.setFromUnitVectors(X_AXIS, dir)
+  b.add(k % 2 ? LINK_B : LINK_A, mat, M.compose(center, Q, ONE))
+}
+
+/**
+ * 2点の間に、たるんだ鎖を下げる
+ * @param sag - 真ん中で、まっすぐな線から下がる長さ (m)
+ */
+const chain = (b, mat, from, to, sag) => {
+  const n = Math.max(2, Math.round(from.distanceTo(to) / 0.022))
+  const point = (t) => {
+    const p = new THREE.Vector3().lerpVectors(from, to, t)
+    p.y -= sag * 4 * t * (1 - t)
+    return p
+  }
+  for (let k = 0; k < n; k++) {
+    const p0 = point(k / n)
+    const p1 = point((k + 1) / n)
+    const dir = p1.clone().sub(p0).normalize()
+    link(b, mat, k, p0.add(p1).multiplyScalar(0.5), dir)
+  }
 }
 
 /**
@@ -245,12 +307,21 @@ export const buildBuilding = (scene) => {
       metalness: 0.15,
     }),
     doorEdge: new THREE.MeshStandardMaterial({ color: 0x3a3029, roughness: 0.6 }),
-    roomDark: new THREE.MeshStandardMaterial({ color: 0x0e0d0c, roughness: 1 }),
-    roomWarm: new THREE.MeshStandardMaterial({
-      color: 0x6e5c48,
-      roughness: 0.95,
-      side: THREE.BackSide,
+    roofDoor: new THREE.MeshStandardMaterial({
+      map: steelDoorTexture(),
+      roughness: 0.62,
+      metalness: 0.2,
     }),
+    roofFrame: new THREE.MeshStandardMaterial({ color: 0x59625c, roughness: 0.6, metalness: 0.25 }),
+    roofWarn: new THREE.MeshStandardMaterial({ map: roofWarnTexture(), roughness: 0.5 }),
+    brass: new THREE.MeshStandardMaterial({ color: 0x9c7d3a, roughness: 0.35, metalness: 0.8 }),
+    cone: new THREE.MeshStandardMaterial({ color: 0xb02a1f, roughness: 0.55 }),
+    cloth: tiled(clothTexture(), 0.9, { roughness: 0.95 }),
+    flooring: tiled(flooringTexture(), 1.2, { roughness: 0.45 }),
+    woodTrim: new THREE.MeshStandardMaterial({ color: 0x5b4430, roughness: 0.55 }),
+    inDoor: new THREE.MeshStandardMaterial({ color: 0xa08665, roughness: 0.55 }),
+    cabinet: new THREE.MeshStandardMaterial({ color: 0x6b5440, roughness: 0.6 }),
+    slipper: new THREE.MeshStandardMaterial({ color: 0x7d6f69, roughness: 0.9 }),
   }
   const plates = [1, 2, 3, 4].map(
     (f) => new THREE.MeshStandardMaterial({ map: plateAtlas(f), roughness: 0.5 }),
@@ -351,6 +422,104 @@ export const buildBuilding = (scene) => {
     return { group, hinge, lever }
   }
 
+  /**
+   * 屋上へ出る鉄の扉。段を1つ上がった先にあり、レバーに鎖が巻かれて南京錠で留めてある
+   * @param y - 屋上の階の床の高さ
+   */
+  const roofDoor = (y) => {
+    const [z0, z1] = DOORWAY
+    // 扉の前の段と、扉の下の沓摺り
+    box(b, mat.concrete, SX1 - 0.24, SX1 + 0.12, y, y + 0.18, z0 - 0.02, z1 + 0.02)
+    box(b, mat.nosing, SX1 - 0.245, SX1 - 0.19, y + 0.17, y + 0.186, z0 - 0.02, z1 + 0.02)
+    box(b, mat.stainless, SX1 - 0.005, SX1 + 0.11, y + 0.18, y + 0.195, z0 + 0.03, z1 - 0.03)
+    // 枠。奥は黒くふさいで、すき間から外が見えないようにする
+    box(b, mat.roofFrame, SX1 - 0.025, SX1 + 0.12, y + 0.18, y + 2.1, z0, z0 + 0.05)
+    box(b, mat.roofFrame, SX1 - 0.025, SX1 + 0.12, y + 0.18, y + 2.1, z1 - 0.05, z1)
+    box(b, mat.roofFrame, SX1 - 0.025, SX1 + 0.12, y + 2.05, y + 2.1, z0, z1)
+    wallX(b, mat.black, SX1 + 0.11, z0, z1, y + 0.18, y + 2.1, -1)
+    // 扉。ちょうつがいは北 (z0) の側
+    box(b, mat.roofDoor, SX1 + 0.035, SX1 + 0.075, y + 0.198, y + 2.047, z0 + 0.052, z1 - 0.052)
+    // レバーハンドルとサムターン
+    const hz = z1 - 0.15
+    box(b, mat.stainless, SX1 + 0.025, SX1 + 0.035, y + 0.92, y + 1.2, hz - 0.025, hz + 0.025)
+    box(b, mat.stainless, SX1 - 0.025, SX1 + 0.025, y + 1.03, y + 1.055, hz - 0.012, hz + 0.012)
+    box(b, mat.stainless, SX1 - 0.042, SX1 - 0.02, y + 1.03, y + 1.055, hz - 0.15, hz + 0.012)
+    b.add(
+      new THREE.CylinderGeometry(0.018, 0.018, 0.01, 16),
+      mat.stainless,
+      at(SX1 + 0.022, y + 1.15, hz, 0, 0, Math.PI / 2),
+    )
+    box(b, mat.stainless, SX1 + 0.002, SX1 + 0.017, y + 1.13, y + 1.17, hz - 0.005, hz + 0.005)
+    // ドアクローザー
+    box(b, mat.alum, SX1 - 0.03, SX1 + 0.035, y + 1.92, y + 1.99, z0 + 0.1, z0 + 0.38)
+    box(b, mat.alum, SX1 - 0.045, SX1 - 0.03, y + 1.95, y + 1.965, z0 + 0.34, z0 + 0.62)
+    box(b, mat.alum, SX1 - 0.05, SX1 - 0.025, y + 1.95, y + 2.05, z0 + 0.6, z0 + 0.66)
+    // 壁のアイボルト。レバーに巻いた鎖をここまで引いて、南京錠で留める
+    const eye = new THREE.Vector3(SX1 - 0.02, y + 1.0, z1 + 0.1)
+    box(
+      b,
+      mat.stainless,
+      SX1 - 0.004,
+      SX1,
+      eye.y - 0.025,
+      eye.y + 0.025,
+      eye.z - 0.025,
+      eye.z + 0.025,
+    )
+    b.add(new THREE.TorusGeometry(0.016, 0.0035, 6, 14), mat.stainless, at(eye.x, eye.y, eye.z))
+    const wrap = new THREE.Vector3(SX1 - 0.031, y + 1.0425, hz - 0.09)
+    for (let k = 0; k < 4; k++) {
+      const a = (k / 4) * Math.PI * 2
+      const p = new THREE.Vector3(Math.cos(a), Math.sin(a), 0).multiplyScalar(0.022).add(wrap)
+      link(b, mat.stainless, k, p, new THREE.Vector3(-Math.sin(a), Math.cos(a), 0))
+    }
+    chain(
+      b,
+      mat.stainless,
+      new THREE.Vector3(wrap.x, wrap.y - 0.024, wrap.z),
+      new THREE.Vector3(eye.x, eye.y - 0.016, eye.z),
+      0.07,
+    )
+    box(
+      b,
+      mat.brass,
+      SX1 - 0.04,
+      SX1 - 0.018,
+      eye.y - 0.1,
+      eye.y - 0.048,
+      eye.z - 0.022,
+      eye.z + 0.022,
+    )
+    b.add(
+      new THREE.TorusGeometry(0.014, 0.003, 6, 12, Math.PI),
+      mat.stainless,
+      at(SX1 - 0.029, eye.y - 0.034, eye.z, 0, Math.PI / 2),
+    )
+    ;[-1, 1].forEach((s) => {
+      b.add(
+        new THREE.CylinderGeometry(0.003, 0.003, 0.014, 6),
+        mat.stainless,
+        at(SX1 - 0.029, eye.y - 0.041, eye.z + s * 0.014),
+      )
+    })
+    // 扉の注意書き
+    b.add(
+      new THREE.PlaneGeometry(0.3, 0.41),
+      mat.roofWarn,
+      at(SX1 + 0.033, y + 1.5, (z0 + z1) / 2 - 0.06, 0, -Math.PI / 2, 0.025),
+    )
+    // 踊り場の隅のカラーコーン
+    const cx = SX0 + 0.14
+    const cz = -0.15
+    box(b, mat.dark, cx - 0.15, cx + 0.15, y, y + 0.035, cz - 0.15, cz + 0.15)
+    b.add(new THREE.CylinderGeometry(0.022, 0.115, 0.6, 16), mat.cone, at(cx, y + 0.335, cz))
+    b.add(
+      new THREE.CylinderGeometry(0.057, 0.076, 0.12, 16, 1, true),
+      mat.white,
+      at(cx, y + 0.36, cz),
+    )
+  }
+
   // ---------- 外 ----------
   flat(b, mat.ground, -0.02, -60, 110, -40, 40, 1)
   flat(b, mat.asphalt, -0.15, -40, 90, 3.15, 11.2, 1)
@@ -425,15 +594,21 @@ export const buildBuilding = (scene) => {
 
   // ---------- 建物の外側 ----------
   const top = FLOORS * FH
-  box(b, mat.tile, 0, CX1 + 0.2, 0, top + 0.1, -9, BACK_Z - 0.2)
-  box(b, mat.tile, HX1, CX1 + 0.2, 0, top + 0.1, BACK_Z - 0.25, CZ - 0.2)
+  // 建物の奥の詰まった部分。412号室の玄関と廊下のところだけ、くり抜いておく
+  const homeY = floorY(FLOORS)
+  const hole = [ROOM.x0, ROOM.x1, homeY, homeY + 2.7, ROOM.z0, ROOM.z1]
+  boxWithout(b, mat.tile, [0, CX1 + 0.2, 0, top + 0.1, -9, BACK_Z - 0.2], hole)
+  boxWithout(b, mat.tile, [HX1, CX1 + 0.2, 0, top + 0.1, BACK_Z - 0.25, CZ - 0.2], hole)
   box(b, mat.tile, -0.2, 0, 0, top + 2.8, -9, FRONT)
   box(b, mat.tile, CX1, CX1 + 0.2, 0, top + 0.7, CZ - 0.2, FRONT)
   box(b, mat.tile, 0, SX1, 0, top + 2.8, 0, FRONT)
   box(b, mat.tile, 0, SX1 + 0.05, top + 2.5, top + 3.0, BACK_Z - 0.2, FRONT)
   box(b, mat.tile, SX1, CX1 + 0.2, top + 0.4, top + 0.75, 0, FRONT)
   box(b, mat.alum, SX1, CX1 + 0.2, top + 0.75, top + 0.8, -0.02, FRONT + 0.02)
-  box(b, mat.tile, SX1, CX1 + 0.2, top, top + 0.4, -9, FRONT)
+  // 屋上の床版。階段室の壁と重ならないように少し離し、屋上の扉の前だけは扉の枠の奥から始める
+  box(b, mat.tile, SX1 + 0.01, CX1 + 0.2, top, top + 0.4, -9, DOORWAY[0])
+  box(b, mat.tile, SX1 + 0.12, CX1 + 0.2, top, top + 0.4, DOORWAY[0], DOORWAY[1])
+  box(b, mat.tile, SX1 + 0.01, CX1 + 0.2, top, top + 0.4, DOORWAY[1], FRONT)
   // 階段室の西の窓 (外から見える方)
   for (let f = 1; f <= FLOORS; f++) {
     const y = floorY(f) + HALF + 1.4
@@ -451,14 +626,14 @@ export const buildBuilding = (scene) => {
 
     // 床と、下の階の天井になる床版
     if (!ground) {
-      box(b, mat.ceiling, SX1, HX1, y - 0.4, y, BACK_Z, FRONT)
+      box(b, mat.ceiling, SX1 + 0.01, HX1, y - 0.4, y, BACK_Z, FRONT)
       box(b, mat.ceiling, HX1, CX1, y - 0.4, y, CZ, FRONT)
       wallZ(b, mat.tile, FRONT + 0.002, SX1, CX1 + 0.2, y - 0.4, y, 1)
     }
     flat(b, ground ? mat.stone : mat.sheet, y + 0.001, SX1, HX1, BACK_Z, 0, 1)
     flat(b, mat.sheet, y + 0.001, HX1, CX1, CZ, 0, 1)
     if (f === FLOORS) {
-      box(b, mat.ceiling, SX1, HX1, top - 0.4, top, BACK_Z, FRONT)
+      box(b, mat.ceiling, SX1 + 0.01, HX1, top - 0.4, top, BACK_Z, FRONT)
       box(b, mat.ceiling, HX1, CX1, top - 0.4, top, CZ, FRONT)
       wallZ(b, mat.tile, FRONT + 0.002, SX1, CX1 + 0.2, top - 0.4, top, 1)
     }
@@ -527,39 +702,30 @@ export const buildBuilding = (scene) => {
       wallX(b, mat.paint, xd - 0.48, CZ - 0.2, CZ, y, y + 2.05, 1)
       wallX(b, mat.paint, xd + 0.48, CZ - 0.2, CZ, y, y + 2.05, -1)
       flat(b, mat.paint, y + 2.05, xd - 0.48, xd + 0.48, CZ - 0.2, CZ, -1)
+      flat(b, mat.sheet, y + 0.002, xd - 0.48, xd + 0.48, CZ - 0.2, CZ, 1)
       prev = xd + 0.48
       // 枠
       box(b, mat.trim, xd - 0.5, xd - 0.45, y, y + 2.08, CZ - 0.02, CZ + 0.03)
       box(b, mat.trim, xd + 0.45, xd + 0.5, y, y + 2.08, CZ - 0.02, CZ + 0.03)
       box(b, mat.trim, xd - 0.5, xd + 0.5, y + 2.03, y + 2.08, CZ - 0.02, CZ + 0.03)
       // ドア
-      const leaf = makeLeaf(0.9, 2.0)
+      const leaf = makeLeaf(0.9, 2.025)
       leaf.group.position.set(xd, y, CZ - 0.03)
       root.add(leaf.group)
+      // ドアの奥は暗くふさぐ。412号室だけは、奥に玄関と廊下がある
       const isHome = f === FLOORS && i === UNITS - 1
-      const back = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.96, 2.05),
-        isHome ? mat.roomDark : mat.black,
-      )
-      back.position.set(xd, y + 1.025, CZ - 0.2)
-      root.add(back)
+      if (!isHome) wallZ(b, mat.black, CZ - 0.19, xd - 0.48, xd + 0.48, y, y + 2.05, 1)
       doors.push({ ...leaf, floor: f, num, x: xd, y, z: CZ, rattle: 0, home: isHome })
-      // 部屋番号の札、インターホン、メーターボックス
-      const plate = new THREE.PlaneGeometry(0.2, 0.2)
+      // 部屋番号の札とインターホンは、ドアの枠とメーターボックスの間に縦に並べる
+      const px = xd + 0.66
+      box(b, mat.stainless, px - 0.085, px + 0.085, y + 1.525, y + 1.635, CZ, CZ + 0.008)
+      const plate = new THREE.PlaneGeometry(0.16, 0.1)
       const uv = plate.attributes.uv
       for (let k = 0; k < uv.count; k++) uv.setX(k, (i + uv.getX(k)) / 12)
-      b.add(plate, plates[f - 1], at(xd + 0.68, y + 1.62, CZ + 0.004))
-      box(b, mat.white, xd + 0.62, xd + 0.74, y + 1.28, y + 1.44, CZ, CZ + 0.035)
-      box(
-        b,
-        mat.meter,
-        HX1 + UNIT * i + 1.43,
-        HX1 + UNIT * i + 2.07,
-        y + 0.08,
-        y + 1.98,
-        CZ,
-        CZ + 0.03,
-      )
+      b.add(plate, plates[f - 1], at(px, y + 1.58, CZ + 0.0085))
+      box(b, mat.white, px - 0.055, px + 0.055, y + 1.24, y + 1.4, CZ, CZ + 0.035)
+      box(b, mat.dark, px - 0.018, px + 0.018, y + 1.27, y + 1.3, CZ + 0.035, CZ + 0.04)
+      box(b, mat.meter, xd + 0.82, xd + 1.42, y + 0.08, y + 1.98, CZ, CZ + 0.03)
       // 面格子付きのくもりガラスの窓
       const wx = HX1 + UNIT * i + 2.65
       const lit = Math.random() < 0.3
@@ -602,38 +768,127 @@ export const buildBuilding = (scene) => {
     zones.push(zone(`D${f}`, SX1 - 0.5, SX1 + 0.5, DOORWAY[0] + 0.25, DOORWAY[1] - 0.25, () => y))
   }
 
-  // 412号室の中 (最後に入る玄関)。たたき、上がりかまち、靴、奥のガラス戸
+  // 412号室の中 (最後に入る)。玄関のたたきと靴箱、上がり框の先にまっすぐ廊下が伸び、
+  // 両側に部屋のドア、突き当たりに明かりの点いた居間のガラス戸がある
   const homeDoor = doors.find((d) => d.home)
   const room = new THREE.Group()
   room.visible = false
   root.add(room)
+  const rb = makeBuilder()
   const hx = homeDoor.x
   const hy = homeDoor.y
-  const inner = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.4, 2.4), mat.roomWarm)
-  inner.position.set(hx, hy + 1.2, CZ - 1.4)
-  const step = new THREE.Mesh(
-    new THREE.BoxGeometry(1.38, 0.18, 1.5),
-    new THREE.MeshStandardMaterial({ color: 0x5c4330, roughness: 0.7 }),
-  )
-  step.position.set(hx, hy + 0.09, CZ - 1.85)
-  const genkan = new THREE.Mesh(new THREE.PlaneGeometry(1.38, 0.88), mat.stone)
-  genkan.rotation.x = -Math.PI / 2
-  genkan.position.set(hx, hy + 0.005, CZ - 0.66)
+  const { x0: gx0, x1: gx1, z0: ze, z1: zf } = ROOM
+  const kx1 = hx + 0.5
+  const zs = CZ - 1.05
+  const yf = hy + 0.2
+  const yc = hy + 2.6
+  // 壁と天井。廊下は玄関より細く、東側は靴箱の奥で折れる
+  wallX(rb, mat.cloth, gx0 + 0.005, ze, zf, hy, yc, 1)
+  wallX(rb, mat.cloth, gx1 - 0.005, zs, zf, hy, yc, -1)
+  wallX(rb, mat.cloth, kx1, ze, zs, hy, yc, -1)
+  wallZ(rb, mat.cloth, zs, kx1, gx1, hy, yc, 1)
+  wallZ(rb, mat.cloth, zf - 0.005, gx0, hx - 0.48, hy, hy + 2.05, -1)
+  wallZ(rb, mat.cloth, zf - 0.005, hx + 0.48, gx1, hy, yc, -1)
+  wallZ(rb, mat.cloth, zf - 0.005, gx0, hx + 0.48, hy + 2.05, yc, -1)
+  flat(rb, mat.cloth, yc, gx0, gx1, ze, zf, -1)
+  // 玄関のたたき、上がり框、廊下の床と巾木
+  flat(rb, mat.stone, hy + 0.015, gx0, gx1, zs, zf, 1)
+  flat(rb, mat.stone, hy + 0.015, hx - 0.48, hx + 0.48, zf, CZ - 0.04, 1)
+  box(rb, mat.woodTrim, gx0, kx1, hy, yf, zs - 0.05, zs)
+  flat(rb, mat.flooring, yf, gx0, kx1, ze, zs - 0.05, 1)
+  box(rb, mat.woodTrim, gx0, gx0 + 0.015, yf, yf + 0.06, ze, zs - 0.05)
+  box(rb, mat.woodTrim, kx1 - 0.015, kx1, yf, yf + 0.06, ze, zs - 0.05)
+  // 靴箱。真ん中に扉の合わせ目と取っ手
+  const mid = (zs + zf) / 2
+  box(rb, mat.cabinet, gx1 - 0.38, gx1 - 0.005, hy + 0.015, hy + 0.95, zs + 0.02, zf - 0.01)
+  box(rb, mat.dark, gx1 - 0.386, gx1 - 0.379, hy + 0.08, hy + 0.9, mid - 0.004, mid + 0.004)
+  ;[-1, 1].forEach((side) => {
+    const z = mid + side * 0.045
+    box(rb, mat.stainless, gx1 - 0.396, gx1 - 0.38, hy + 0.78, hy + 0.84, z - 0.008, z + 0.008)
+  })
+
+  /**
+   * 廊下の横の壁に、部屋のドアを1枚付ける
+   * @param x - 壁の位置
+   * @param dir - 廊下へ向く向き。西の壁なら 1、東の壁なら -1
+   * @param z - ドアの真ん中
+   */
+  const sideDoor = (x, dir, z, w = 0.72) => {
+    const span = (d0, d1) => {
+      const a = x + dir * d0
+      const c = x + dir * d1
+      return [Math.min(a, c), Math.max(a, c)]
+    }
+    const [d0, d1] = span(0, 0.03)
+    box(rb, mat.inDoor, d0, d1, yf, yf + 2.0, z - w / 2, z + w / 2)
+    const [f0, f1] = span(0, 0.045)
+    box(rb, mat.woodTrim, f0, f1, yf, yf + 2.05, z - w / 2 - 0.05, z - w / 2)
+    box(rb, mat.woodTrim, f0, f1, yf, yf + 2.05, z + w / 2, z + w / 2 + 0.05)
+    box(rb, mat.woodTrim, f0, f1, yf + 2.0, yf + 2.05, z - w / 2, z + w / 2)
+    const [l0, l1] = span(0.03, 0.085)
+    box(rb, mat.stainless, l0, l1, yf + 0.94, yf + 0.962, z + w / 2 - 0.17, z + w / 2 - 0.06)
+  }
+  sideDoor(gx0, 1, CZ - 1.95)
+  sideDoor(kx1, -1, CZ - 2.65, 0.75)
+  sideDoor(gx0, 1, CZ - 3.95)
+
+  // 突き当たりの、居間へのガラス戸
+  const gl = hx - 0.39
+  const gr = hx + 0.39
+  wallZ(rb, mat.cloth, ze + 0.005, gx0, gl - 0.05, hy, yc, 1)
+  wallZ(rb, mat.cloth, ze + 0.005, gr + 0.05, kx1, hy, yc, 1)
+  wallZ(rb, mat.cloth, ze + 0.005, gl - 0.05, gr + 0.05, yf + 2.05, yc, 1)
+  box(rb, mat.woodTrim, gl - 0.05, gl, yf, yf + 2.05, ze, ze + 0.045)
+  box(rb, mat.woodTrim, gr, gr + 0.05, yf, yf + 2.05, ze, ze + 0.045)
+  box(rb, mat.woodTrim, gl, gr, yf + 2.0, yf + 2.05, ze, ze + 0.045)
+  box(rb, mat.inDoor, gl, gl + 0.06, yf, yf + 2.0, ze, ze + 0.03)
+  box(rb, mat.inDoor, gr - 0.06, gr, yf, yf + 2.0, ze, ze + 0.03)
+  box(rb, mat.inDoor, gl + 0.06, gr - 0.06, yf, yf + 0.12, ze, ze + 0.03)
+  box(rb, mat.inDoor, gl + 0.06, gr - 0.06, yf + 1.94, yf + 2.0, ze, ze + 0.03)
+  const glass = new THREE.Mesh(new THREE.PlaneGeometry(gr - gl - 0.12, 1.82), frosted.lit)
+  glass.position.set(hx, yf + 1.03, ze + 0.015)
+  room.add(glass)
+
+  // 上がり框の先にそろえたスリッパと、たたきの靴
+  ;[-0.09, 0.09].forEach((dx) => {
+    box(rb, mat.slipper, hx + dx - 0.045, hx + dx + 0.045, yf, yf + 0.025, zs - 0.33, zs - 0.07)
+  })
   const shoeMat = new THREE.MeshStandardMaterial({ color: 0x1b1a19, roughness: 0.6 })
   ;[-0.12, 0.12].forEach((dx, k) => {
     const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 0.27), shoeMat)
-    shoe.position.set(hx + 0.25 + dx, hy + 0.045, CZ - 0.75 - k * 0.03)
+    shoe.position.set(hx + 0.25 + dx, hy + 0.055, CZ - 0.75 - k * 0.03)
     shoe.rotation.y = 0.15 * (k ? -1 : 1)
     room.add(shoe)
   })
-  const glassDoor = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.7, 1.9),
-    new THREE.MeshBasicMaterial({ map: frostedTexture('lit') }),
-  )
-  glassDoor.position.set(hx, hy + 0.18 + 0.95, CZ - 2.58)
-  room.add(inner, step, genkan, glassDoor)
-  const homeLamp = fixture(hx, hy + 2.1, CZ - 1.3, 0xffd6a0, 3, 4.2, null)
-  homeLamp.on = false
+
+  // 明かり。4階に着くまでは消えている
+  const homeLamps = []
+
+  /**
+   * 部屋の天井に、丸い明かりを1つ置く
+   */
+  const roomLight = (x, z, r, color, power, dist) => {
+    rb.add(
+      new THREE.CylinderGeometry(r + 0.025, r + 0.025, 0.04, 20),
+      mat.white,
+      at(x, yc - 0.02, z),
+    )
+    const glow = new THREE.Mesh(
+      new THREE.CircleGeometry(r, 20),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(1.6) }),
+    )
+    glow.position.set(x, yc - 0.041, z)
+    glow.rotation.x = Math.PI / 2
+    room.add(glow)
+    homeLamps.push(fixture(x, yc - 0.3, z, color, power, dist, glow))
+  }
+  roomLight(hx + 0.25, CZ - 0.6, 0.07, 0xffd6a0, 2.5, 3.6)
+  roomLight(hx, CZ - 3.0, 0.13, 0xffe2c0, 3, 5)
+  homeLamps.push(fixture(hx, yf + 1.6, ze + 0.4, 0xffd9a8, 1.5, 3.5, null))
+  homeLamps.forEach((lamp) => {
+    lamp.on = false
+  })
+  rb.build(room)
 
   // ---------- 1階のエントランス ----------
   box(b, mat.alum, SX1, HX1, 2.2, 2.3, 0, FRONT)
@@ -748,32 +1003,24 @@ export const buildBuilding = (scene) => {
     plaque.rotation.y = Math.PI
     root.add(plaque)
     signs.push({ floor: f, draw: sign.draw, label: roof ? 'R' : `${f}F` })
-    // 踊り場の照明
+    // 踊り場の照明。屋上の階のは古くて、ときどきちらつく
     const landLamp = wallLight(2.2, y + 2.25, 0, 0, -1, 0xffe7c9, 3, 5.5)
     landLamp.stair = f
-    // 防火扉 (いつもは開けてある)。屋上だけ閉まっていて開かない
+    zones.push(zone(`L${f}`, SX0 + 0.25, SX1 - 0.25, LAND_Z - 0.05, -0.25, () => y))
+    if (roof) {
+      landLamp.faulty = true
+      roofDoor(y)
+      continue
+    }
+    // 防火扉 (いつもは開けてある)
     const door = new THREE.Group()
     door.position.set(SX1 + 0.05, y, DOORWAY[0])
     const panel = new THREE.Mesh(new THREE.BoxGeometry(0.045, 2.05, 1.0), mat.steel)
     panel.position.set(0, 1.025, 0.5)
     door.add(panel)
-    door.rotation.y = roof ? 0 : Math.PI
+    door.rotation.y = Math.PI
     root.add(door)
     fireDoors.push({ floor: f, group: door })
-    if (roof) {
-      const warn = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.34, 0.42),
-        new THREE.MeshStandardMaterial({
-          map: signTexture(['屋上', '', '関係者以外', '立入禁止']),
-          roughness: 0.9,
-        }),
-      )
-      warn.position.set(SX1 + 0.02, y + 1.5, -0.8)
-      warn.rotation.y = -Math.PI / 2
-      root.add(warn)
-    }
-    zones.push(zone(`L${f}`, SX0 + 0.25, SX1 - 0.25, LAND_Z - 0.05, -0.25, () => y))
-    if (roof) continue
 
     // 中間の踊り場と、その窓と照明
     box(b, mat.concrete, SX0 + 0.01, SX1 - 0.01, y + HALF - 0.25, y + HALF, BACK_Z + 0.01, MID_Z)
@@ -912,7 +1159,7 @@ export const buildBuilding = (scene) => {
     fireDoors,
     entrance,
     room,
-    homeLamp,
+    homeLamps,
     hallLights,
     clock,
     notice,

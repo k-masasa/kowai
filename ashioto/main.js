@@ -478,7 +478,9 @@ const reachFourth = () => {
   S.onFourth = true
   homeDoor.hinge.rotation.y = -0.6
   building.room.visible = true
-  building.homeLamp.on = true
+  building.homeLamps.forEach((lamp) => {
+    lamp.on = true
+  })
 }
 
 /**

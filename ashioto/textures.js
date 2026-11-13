@@ -378,21 +378,21 @@ export const meterBoxTexture = () =>
  * 1つの階の部屋番号札を、1枚の絵に並べる。i 番目の札は、横 1/12 の幅
  */
 export const plateAtlas = (floor) =>
-  canvasTexture(1536, 128, (ctx) => {
+  canvasTexture(1536, 80, (ctx) => {
     for (let i = 0; i < 12; i++) {
       const x = i * 128
-      ctx.fillStyle = '#d4cec0'
-      ctx.fillRect(x, 0, 128, 128)
-      ctx.strokeStyle = '#8f897d'
-      ctx.lineWidth = 6
-      ctx.strokeRect(x + 4, 22, 120, 84)
+      ctx.fillStyle = '#e6e1d5'
+      ctx.fillRect(x, 0, 128, 80)
+      ctx.strokeStyle = '#6f6a60'
+      ctx.lineWidth = 4
+      ctx.strokeRect(x + 6, 6, 116, 68)
       centerText(
         ctx,
         `${floor}${String(i + 1).padStart(2, '0')}`,
         x + 64,
-        66,
-        `600 52px ${GOTHIC}`,
-        '#2b2824',
+        42,
+        `600 46px ${GOTHIC}`,
+        '#24211d',
       )
     }
   })
@@ -523,22 +523,139 @@ export const nameSignTexture = () =>
   })
 
 /**
- * 白地に黒い文字の貼り紙。行ごとに書く
+ * 白地に黒い文字の貼り紙。行ごとに書く。行が多い時は、紙に収まるように行の間を詰める
  */
 export const signTexture = (lines, w = 256, h = 320) =>
   canvasTexture(w, h, (ctx) => {
     ctx.fillStyle = '#efece4'
     ctx.fillRect(0, 0, w, h)
+    const gap = Math.min(52, (h - 100) / Math.max(1, lines.length - 1))
+    const top = (h - gap * (lines.length - 1)) / 2
     lines.forEach((line, i) => {
       const size = i === 0 ? 44 : 22
       centerText(
         ctx,
         line,
         w / 2,
-        60 + i * 52,
+        top + i * gap,
         `700 ${size}px ${GOTHIC}`,
         i === 0 ? '#b3241c' : '#262320',
       )
+    })
+  })
+
+/**
+ * 部屋の壁紙。白っぽい地に、細かい凹凸がある。1枚で 0.9m 四方で、左の端が継ぎ目
+ */
+export const clothTexture = () =>
+  canvasTexture(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#d8d2c5'
+    ctx.fillRect(0, 0, w, h)
+    speckle(ctx, w, h, 9000, ['rgba(255, 255, 255, 0.1)', 'rgba(0, 0, 0, 0.06)'], 1.5)
+    stains(ctx, w, h, 3, '120, 105, 80', 0.12)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.07)'
+    ctx.fillRect(0, 0, 1, h)
+  })
+
+/**
+ * 部屋の廊下のフローリング。細い板が縦に並ぶ。1枚で 1.2m 四方
+ */
+export const flooringTexture = () =>
+  canvasTexture(256, 256, (ctx, w, h) => {
+    const n = 8
+    const pw = w / n
+    for (let i = 0; i < n; i++) {
+      const tone = 0.85 + Math.random() * 0.25
+      ctx.fillStyle = `rgb(${Math.round(128 * tone)}, ${Math.round(96 * tone)}, ${Math.round(66 * tone)})`
+      ctx.fillRect(i * pw, 0, pw, h)
+      for (let k = 0; k < 6; k++) {
+        ctx.fillStyle = `rgba(60, 40, 22, ${0.08 + Math.random() * 0.1})`
+        ctx.fillRect(i * pw + Math.random() * pw, 0, 1, h)
+      }
+      ctx.fillStyle = 'rgba(30, 20, 12, 0.55)'
+      ctx.fillRect(i * pw, 0, 1, h)
+      ctx.fillRect(i * pw, Math.random() * h, pw, 1)
+    }
+  })
+
+/**
+ * 屋上の鉄の扉。塗装が古びて、上からさびが垂れ、手の触れるところと足元が汚れている
+ */
+export const steelDoorTexture = () =>
+  canvasTexture(256, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#7b857d'
+    ctx.fillRect(0, 0, w, h)
+    speckle(ctx, w, h, 2600, ['rgba(255, 255, 255, 0.05)', 'rgba(0, 0, 0, 0.08)'], 2)
+    stains(ctx, w, h, 9, '38, 42, 38', 0.35)
+    for (let i = 0; i < 10; i++) {
+      const x = Math.random() * w
+      const len = 40 + Math.random() * 180
+      const rust = ctx.createLinearGradient(0, 0, 0, len)
+      rust.addColorStop(0, 'rgba(112, 62, 28, 0.6)')
+      rust.addColorStop(1, 'rgba(112, 62, 28, 0)')
+      ctx.fillStyle = rust
+      ctx.fillRect(x, 0, 1.5 + Math.random() * 3, len)
+    }
+    const hand = ctx.createRadialGradient(w * 0.88, h * 0.55, 0, w * 0.88, h * 0.55, 70)
+    hand.addColorStop(0, 'rgba(25, 22, 18, 0.45)')
+    hand.addColorStop(1, 'rgba(25, 22, 18, 0)')
+    ctx.fillStyle = hand
+    ctx.fillRect(0, 0, w, h)
+    const foot = ctx.createLinearGradient(0, h * 0.82, 0, h)
+    foot.addColorStop(0, 'rgba(30, 26, 20, 0)')
+    foot.addColorStop(1, 'rgba(30, 26, 20, 0.6)')
+    ctx.fillStyle = foot
+    ctx.fillRect(0, h * 0.82, w, h * 0.18)
+    for (let i = 0; i < 26; i++) {
+      ctx.strokeStyle = 'rgba(20, 18, 15, 0.35)'
+      ctx.lineWidth = 1 + Math.random() * 2
+      const x = Math.random() * w
+      const y = h * 0.86 + Math.random() * h * 0.12
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+      ctx.lineTo(x + 6 + Math.random() * 24, y + (Math.random() - 0.5) * 6)
+      ctx.stroke()
+    }
+    for (let i = 0; i < 46; i++) {
+      ctx.fillStyle = Math.random() < 0.5 ? 'rgba(118, 66, 34, 0.75)' : 'rgba(176, 181, 170, 0.6)'
+      const s = 1 + Math.random() * 4
+      ctx.fillRect(
+        Math.random() * w,
+        h * 0.55 + Math.random() * h * 0.45,
+        s,
+        s * (0.5 + Math.random()),
+      )
+    }
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)'
+    ctx.lineWidth = 6
+    ctx.strokeRect(0, 0, w, h)
+  })
+
+/**
+ * 屋上の扉に貼ってある注意書き。黄ばんで、上の角をテープで留めてある
+ */
+export const roofWarnTexture = () =>
+  canvasTexture(256, 352, (ctx, w, h) => {
+    ctx.fillStyle = '#e8e1cd'
+    ctx.fillRect(0, 0, w, h)
+    stains(ctx, w, h, 6, '150, 118, 60', 0.3)
+    ctx.fillStyle = '#ad2a20'
+    ctx.fillRect(20, 30, w - 40, 62)
+    centerText(ctx, '危険', w / 2, 62, `700 42px ${GOTHIC}`, '#f1ebdf')
+    ;['屋上への', '立ち入りを', '禁止します'].forEach((line, i) => {
+      centerText(ctx, line, w / 2, 146 + i * 44, `700 28px ${GOTHIC}`, '#262320')
+    })
+    centerText(ctx, '管理組合', w / 2, h - 42, `500 19px ${GOTHIC}`, '#4b463f')
+    ctx.fillStyle = 'rgba(214, 200, 150, 0.7)'
+    ;[
+      [14, 12, -0.6],
+      [w - 14, 12, 0.6],
+    ].forEach(([x, y, a]) => {
+      ctx.save()
+      ctx.translate(x, y)
+      ctx.rotate(a)
+      ctx.fillRect(-26, -9, 52, 18)
+      ctx.restore()
     })
   })
 
