@@ -15,12 +15,39 @@ const STRIDE = 0.72
 // 難しさごとの、顔の無い人の強さ
 // start: 最初に離れている距離、walk: 見ていない間の速さ、rush: 停電の間の速さ
 // gap: 停電の間隔 (遠い時、近い時)、dark: 停電の長さ (最短、ばらつき)、flash: 懐中電灯の明るさ
+// strict: うしろへ戻り続けると死ぬか
 const LEVELS = {
-  easy: { start: 11.5, walk: 2.05, rush: 4.2, gap: [4.2, 1.5], dark: [0.18, 0.32], flash: 8 },
-  normal: { start: 10.5, walk: 2.3, rush: 4.4, gap: [4.0, 1.4], dark: [0.18, 0.3], flash: 7 },
-  hard: { start: 9.5, walk: 2.6, rush: 4.6, gap: [3.6, 1.3], dark: [0.2, 0.28], flash: 5.5 },
+  easy: {
+    start: 11.5,
+    walk: 2.05,
+    rush: 4.2,
+    gap: [4.2, 1.5],
+    dark: [0.18, 0.32],
+    flash: 8,
+    strict: false,
+  },
+  normal: {
+    start: 10.5,
+    walk: 2.3,
+    rush: 4.4,
+    gap: [4.0, 1.4],
+    dark: [0.18, 0.3],
+    flash: 7,
+    strict: true,
+  },
+  hard: {
+    start: 9.5,
+    walk: 2.6,
+    rush: 4.6,
+    gap: [3.6, 1.3],
+    dark: [0.2, 0.28],
+    flash: 5.5,
+    strict: true,
+  },
 }
 const STORE = 'kowai.ashioto'
+// うしろへこれだけ戻ると死ぬ (m)
+const BACK_LIMIT = 6
 
 /**
  * id で要素を取る
@@ -42,6 +69,11 @@ const memory = loadMemory()
 const S = {
   mode: 'title',
   level: LEVELS.easy,
+  back: 0,
+  door: null,
+  doorSide: 0,
+  pullFrom: null,
+  rushDir: 0,
   memory,
   // 前に遊んだことがあると、1段早く進む
   head: memory.visits > 0 ? 1 : 0,
@@ -445,25 +477,97 @@ const goHome = () => {
  * つかまった。振り向かせて、目の前に顔を出す
  */
 const caught = () => {
-  S.mode = 'caught'
-  S.cine = 0
-  S.memory.last = 'caught'
-  saveMemory()
-  setDark(false)
+  die('caught', 'あなたの歩き方を、おぼえました。', 0.9)
   const fig = figure.group.position
   S.yaw = Math.atan2(-(fig.x - S.pos.x), -(fig.z - S.pos.z))
   S.pitch = 0.04
   fig.set(S.pos.x - Math.sin(S.yaw) * 0.42, 0, S.pos.z - Math.cos(S.yaw) * 0.42)
   figure.face(S.pos)
   figure.scarePose()
-  sound.setDrone(0)
   sound.scare()
+}
+
+/**
+ * 死んだ時の共通の処理。記録を残して、暗転とエンディングの予定を組む
+ * @param mode - 死に方。毎フレームの演出を切り替えるのに使う
+ * @param line - エンディングに出す一文
+ * @param at - 暗転するまでの秒数
+ */
+const die = (mode, line, at) => {
+  S.mode = mode
+  S.cine = 0
+  S.memory.last = 'caught'
+  saveMemory()
+  setDark(false)
+  S.ahead = false
+  S.vanishIn = 0
+  sound.setDrone(0)
   const time = clockText(new Date())
   S.timeline = [
-    [0.9, () => fadeOut(0)],
-    [2.0, () => showEnding([time, 'あなたの歩き方を、おぼえました。'])],
-    [4.0, () => showNext()],
+    [at, () => fadeOut(0)],
+    [at + 1.1, () => showEnding([time, line])],
+    [at + 3.1, () => showNext()],
   ]
+}
+
+/**
+ * 近くのドアが開いて、中から出てきた手に引きずり込まれる
+ */
+const pulledIn = () => {
+  const door = [...world.here.doors].sort(
+    (a, b) => Math.abs(a.z - S.pos.z) - Math.abs(b.z - S.pos.z),
+  )[0]
+  die('door', 'ドアの向こうに、連れていかれました。', 1.3)
+  S.door = door
+  S.doorSide = Math.sign(door.group.position.x)
+  S.pullFrom = S.pos.clone()
+  door.hinge.rotation.y = -1.35
+  figure.group.position.set(S.doorSide * (W / 2 - 0.25), 0, door.z)
+  figure.face(S.pos)
+  figure.scarePose()
+  figure.group.visible = true
+  S.yaw = Math.atan2(-(figure.group.position.x - S.pos.x), -(door.z - S.pos.z))
+  S.pitch = 0
+  sound.slam(0.9)
+  sound.scare()
+}
+
+/**
+ * 廊下の先から、顔の無い人がものすごい速さで走ってくる
+ */
+const rushed = () => {
+  die('rush', '戻る道は、ありませんでした。', 1.25)
+  S.rushDir = -Math.cos(S.yaw) <= 0 ? -1 : 1
+  S.yaw = S.rushDir < 0 ? 0 : Math.PI
+  S.pitch = 0
+  figure.group.position.set(0, 0, S.pos.z + S.rushDir * 13)
+  figure.face(S.pos)
+  figure.scarePose()
+  figure.group.visible = true
+  for (let i = 0; i < 10; i++) {
+    sound.step(0.15 + i * 0.08, { muffle: 0.6 - i * 0.06, when: i * 0.11 })
+  }
+  S.timeline.unshift([1.08, () => sound.scare()])
+}
+
+/**
+ * うしろへ戻りすぎた。死に方はランダムで選ぶ
+ */
+const backDeath = () => {
+  if (Math.random() < 0.5) {
+    pulledIn()
+    return
+  }
+  rushed()
+}
+
+/**
+ * うしろへ戻った距離を数える。前へ進むと減る
+ */
+const trackBack = (dz) => {
+  if (!S.level.strict || S.final) return
+  S.back = Math.max(0, S.back + dz)
+  if (S.back > BACK_LIMIT) backDeath()
 }
 
 /**
@@ -529,6 +633,8 @@ const move = (dt) => {
   S.pos.addScaledVector(velocity, dt)
   S.pos.x = THREE.MathUtils.clamp(S.pos.x, -W / 2 + 0.28, W / 2 - 0.28)
   walkSounds(velocity.length() * dt)
+  trackBack(velocity.z * dt)
+  if (S.mode !== 'play') return
   bounds()
 }
 
@@ -687,6 +793,38 @@ const updateCaught = (dt) => {
 }
 
 /**
+ * ドアに引きずり込まれる演出。揺れながら、ドアの方へ引っぱられる
+ */
+const updateDoorDeath = (dt) => {
+  S.cine += dt
+  const k = THREE.MathUtils.clamp((S.cine - 0.3) / 1.0, 0, 1)
+  const e = k * k
+  S.pos.x = THREE.MathUtils.lerp(S.pullFrom.x, S.doorSide * (W / 2 - 0.12), e)
+  S.pos.z = THREE.MathUtils.lerp(S.pullFrom.z, S.door.z, e)
+  figure.group.position.x = THREE.MathUtils.lerp(
+    S.doorSide * (W / 2 - 0.25),
+    S.doorSide * (W / 2 + 0.2),
+    e,
+  )
+  S.pitch = Math.sin(S.cine * 40) * 0.04 * k
+  if (S.cine < 1.3) flashlight.intensity = Math.random() < 0.35 ? 0 : S.level.flash * 1.3
+  runTimeline()
+}
+
+/**
+ * 前から走ってくる演出。目の前まで来たら止まる
+ */
+const updateRush = (dt) => {
+  S.cine += dt
+  const fig = figure.group.position
+  const d = Math.abs(fig.z - S.pos.z)
+  if (d > 0.45) fig.z -= S.rushDir * Math.min(12 * dt, d - 0.45)
+  figure.face(S.pos)
+  if (d < 2) flashlight.intensity = Math.random() < 0.4 ? 0 : S.level.flash * 1.3
+  runTimeline()
+}
+
+/**
  * 207号室に入る演出。ドアを開けて、中へ進む
  */
 const updateHome = (dt) => {
@@ -743,6 +881,8 @@ const tick = (time) => {
   if (S.mode === 'play') updatePlay(dt)
   if (S.mode === 'caught') updateCaught(dt)
   if (S.mode === 'home') updateHome(dt)
+  if (S.mode === 'door') updateDoorDeath(dt)
+  if (S.mode === 'rush') updateRush(dt)
   world.update(dt, S.dark, () => sound.clunk())
   updateClock()
   updateHum()
@@ -811,6 +951,7 @@ if (import.meta.env.DEV) {
       S.pos.z = -SEG - 0.01
       bounds()
     },
+    die: (kind) => (kind === 'door' ? pulledIn() : rushed()),
     look: (yaw, pitch = 0) => {
       S.yaw = yaw
       S.pitch = pitch
