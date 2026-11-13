@@ -35,6 +35,20 @@ canvas {
   color: #e0dbd0;
 }
 
+#back {
+  position: absolute;
+  top: 24px;
+  left: 28px;
+  font-size: 13px;
+  letter-spacing: 0.15em;
+  color: #55514a;
+  text-decoration: none;
+}
+
+#back:hover {
+  color: #a39d92;
+}
+
 #levels {
   display: flex;
   gap: 2.5em;
