@@ -474,41 +474,161 @@ export const exitTexture = () =>
   })
 
 /**
- * 自販機の正面。光るのは上の見本の段
+ * 自販機の見本を1本描く。缶か、ペットボトル。丸みは左右の陰で出す
+ * @param base - 底の y
+ */
+const drawDrink = (ctx, cx, base, bottle, body, band) => {
+  const bw = bottle ? 24 : 30
+  const bh = bottle ? 66 : 52
+  const x = cx - bw / 2
+  const y = base - bh
+  ctx.fillStyle = body
+  ctx.beginPath()
+  ctx.roundRect(x, y, bw, bh, bottle ? 5 : 3)
+  ctx.fill()
+  if (bottle) {
+    ctx.fillRect(cx - 6, y - 12, 12, 13)
+    ctx.fillStyle = '#e9ebec'
+    ctx.fillRect(cx - 7, y - 19, 14, 7)
+  } else {
+    ctx.fillStyle = '#b9bcbf'
+    ctx.fillRect(x + 2, y - 3, bw - 4, 4)
+  }
+  ctx.fillStyle = band
+  ctx.fillRect(x, y + bh * 0.32, bw, bh * 0.3)
+  const shade = ctx.createLinearGradient(x, 0, x + bw, 0)
+  shade.addColorStop(0, 'rgba(0, 0, 0, 0.38)')
+  shade.addColorStop(0.32, 'rgba(255, 255, 255, 0.28)')
+  shade.addColorStop(0.55, 'rgba(255, 255, 255, 0)')
+  shade.addColorStop(1, 'rgba(0, 0, 0, 0.42)')
+  ctx.fillStyle = shade
+  ctx.fillRect(x, y - (bottle ? 19 : 3), bw, bh + (bottle ? 19 : 3))
+}
+
+/**
+ * 自販機の見本の窓。3段 × 8列で、下に値段の帯 (青はつめたい、赤はあたたかい) とボタン
  */
 export const vendingTexture = () =>
-  canvasTexture(512, 896, (ctx, w, h) => {
-    ctx.fillStyle = '#d9dde2'
+  canvasTexture(512, 374, (ctx, w, h) => {
+    const bg = ctx.createLinearGradient(0, 0, 0, h)
+    bg.addColorStop(0, '#f6f9fb')
+    bg.addColorStop(1, '#dbe3ea')
+    ctx.fillStyle = bg
     ctx.fillRect(0, 0, w, h)
-    ctx.fillStyle = '#eef4f9'
-    ctx.fillRect(24, 24, w - 48, 520)
-    const colors = [
-      '#c0392b',
-      '#2e86c1',
-      '#f1c40f',
-      '#27ae60',
-      '#e67e22',
-      '#8e44ad',
-      '#ecf0f1',
-      '#34495e',
+    const palette = [
+      ['#b3261e', '#f2f2f2'],
+      ['#1f5fa8', '#f5f5f5'],
+      ['#2f7d3a', '#efe7c8'],
+      ['#e0a21b', '#3a2a10'],
+      ['#eef2f4', '#1f5fa8'],
+      ['#5b3a24', '#e9d8b8'],
+      ['#cfe3c4', '#3d6b2f'],
+      ['#ff7a1a', '#ffffff'],
+      ['#20242a', '#c9a24a'],
     ]
-    for (let r = 0; r < 4; r++) {
-      for (let c = 0; c < 8; c++) {
-        const x = 40 + c * 54
-        const y = 44 + r * 124
-        ctx.fillStyle = colors[(r * 3 + c) % colors.length]
-        ctx.fillRect(x + 8, y, 30, 86)
-        ctx.fillStyle = '#2b2b2b'
-        ctx.fillRect(x + 4, y + 94, 38, 14)
-        ctx.fillStyle = '#ff5544'
-        ctx.fillRect(x + 12, y + 97, 22, 8)
+    const cols = 8
+    const cw = w / cols
+    const rh = h / 3
+    for (let r = 0; r < 3; r++) {
+      ctx.fillStyle = 'rgba(120, 130, 140, 0.35)'
+      ctx.fillRect(0, r * rh + rh - 31, w, 3)
+      for (let c = 0; c < cols; c++) {
+        const [body, band] = palette[(r * 5 + c * 4) % palette.length]
+        const cx = c * cw + cw / 2
+        const base = r * rh + rh - 32
+        const bottle = (r * 3 + c) % 4 === 1 || r === 0
+        drawDrink(ctx, cx, base, bottle, body, band)
+        const hot = r === 2 && c >= 5
+        ctx.fillStyle = hot ? '#c8281e' : '#1d5fb5'
+        ctx.fillRect(c * cw + 4, base + 5, cw - 8, 12)
+        ctx.font = `700 10px ${GOTHIC}`
+        ctx.fillStyle = '#ffffff'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(hot ? '150' : bottle ? '180' : '130', cx, base + 11.5)
+        ctx.fillStyle = '#2a2c2e'
+        ctx.fillRect(cx - 14, base + 20, 28, 8)
+        ctx.fillStyle = (r + c) % 7 === 3 ? '#e04a3a' : '#7ce68a'
+        ctx.fillRect(cx - 11, base + 22, 22, 4)
       }
     }
-    ctx.fillStyle = '#9aa0a6'
-    ctx.fillRect(24, 580, w - 48, 160)
-    ctx.fillStyle = '#1b1d20'
-    ctx.fillRect(60, 770, w - 120, 90)
-    ctx.fillRect(w - 110, 600, 50, 80)
+  })
+
+/**
+ * 自販機の下半分の広告。青い地に、大きな文字
+ */
+export const vendingAdTexture = () =>
+  canvasTexture(384, 352, (ctx, w, h) => {
+    const bg = ctx.createLinearGradient(0, 0, w, h)
+    bg.addColorStop(0, '#0e3f7a')
+    bg.addColorStop(1, '#1b6fb5')
+    ctx.fillStyle = bg
+    ctx.fillRect(0, 0, w, h)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)'
+    ctx.lineWidth = 10
+    ctx.beginPath()
+    ctx.moveTo(-20, h * 0.72)
+    ctx.bezierCurveTo(w * 0.3, h * 0.55, w * 0.6, h * 0.95, w + 20, h * 0.7)
+    ctx.stroke()
+    centerText(ctx, 'つめたい', w / 2, h * 0.3, `800 64px ${GOTHIC}`, '#ffffff')
+    centerText(ctx, 'のみもの', w / 2, h * 0.5, `700 34px ${GOTHIC}`, '#d8ecff')
+  })
+
+/**
+ * 自販機の硬貨とお札の入れ口。上から、金額の表示、硬貨、お札、IC、返却レバー、おつり
+ */
+export const coinPanelTexture = () =>
+  canvasTexture(160, 352, (ctx, w, h) => {
+    const bg = ctx.createLinearGradient(0, 0, w, 0)
+    bg.addColorStop(0, '#8d9196')
+    bg.addColorStop(0.5, '#b7bbc0')
+    bg.addColorStop(1, '#8a8e93')
+    ctx.fillStyle = bg
+    ctx.fillRect(0, 0, w, h)
+    ctx.fillStyle = '#1b0d0b'
+    ctx.fillRect(28, 16, 104, 30)
+    centerText(ctx, '0', 112, 32, `700 22px ${GOTHIC}`, '#ff4a3a')
+    ctx.fillStyle = '#3a3d41'
+    ctx.beginPath()
+    ctx.roundRect(56, 62, 48, 70, 8)
+    ctx.fill()
+    ctx.fillStyle = '#0b0c0d'
+    ctx.fillRect(78, 72, 5, 50)
+    centerText(ctx, '硬貨', w / 2, 144, `600 13px ${GOTHIC}`, '#222')
+    ctx.fillStyle = '#3a3d41'
+    ctx.fillRect(22, 162, 116, 26)
+    ctx.fillStyle = '#0b0c0d'
+    ctx.fillRect(30, 172, 100, 6)
+    centerText(ctx, '千円札', w / 2, 200, `600 13px ${GOTHIC}`, '#222')
+    ctx.fillStyle = '#2b2e32'
+    ctx.beginPath()
+    ctx.roundRect(36, 214, 88, 44, 10)
+    ctx.fill()
+    centerText(ctx, 'IC', w / 2, 236, `700 18px ${GOTHIC}`, '#7fd4ff')
+    ctx.fillStyle = '#5c6066'
+    ctx.fillRect(30, 270, 14, 40)
+    ctx.fillStyle = '#0b0c0d'
+    ctx.fillRect(66, 278, 70, 54)
+    centerText(ctx, 'おつり', 101, 343, `600 11px ${GOTHIC}`, '#222')
+  })
+
+/**
+ * 自販機の横の回収箱の正面。上に丸い入れ口
+ */
+export const binTexture = (label, color) =>
+  canvasTexture(192, 384, (ctx, w, h) => {
+    ctx.fillStyle = '#e7e6e0'
+    ctx.fillRect(0, 0, w, h)
+    stains(ctx, w, h, 4, '90, 80, 60', 0.18)
+    ctx.fillStyle = '#121314'
+    ctx.beginPath()
+    ctx.ellipse(w / 2, 70, 46, 40, 0, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = color
+    ctx.fillRect(0, 140, w, 56)
+    centerText(ctx, label, w / 2, 169, `800 30px ${GOTHIC}`, '#ffffff')
+    centerText(ctx, 'ここに入れてください', w / 2, 226, `600 14px ${GOTHIC}`, '#3a3a38')
+    centerText(ctx, 'ゴミは入れないでください', w / 2, 252, `600 14px ${GOTHIC}`, '#3a3a38')
   })
 
 /**

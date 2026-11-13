@@ -2,9 +2,11 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import {
   asphaltTexture,
+  binTexture,
   ceilingTexture,
   clockFace,
   clothTexture,
+  coinPanelTexture,
   concreteTexture,
   doorLeafTexture,
   exitTexture,
@@ -26,6 +28,7 @@ import {
   steelDoorTexture,
   stoneTileTexture,
   tileTexture,
+  vendingAdTexture,
   vendingTexture,
   wallTexture,
   wireGlassTexture,
@@ -287,6 +290,29 @@ export const buildBuilding = (scene) => {
     mailbox: new THREE.MeshStandardMaterial({ map: mailboxTexture(), roughness: 0.6 }),
     exit: new THREE.MeshBasicMaterial({ map: exitTexture() }),
     vending: new THREE.MeshBasicMaterial({ map: vendingTexture() }),
+    vendAd: new THREE.MeshBasicMaterial({ map: vendingAdTexture(), color: 0xb8b8b8 }),
+    vendCoin: new THREE.MeshStandardMaterial({
+      map: coinPanelTexture(),
+      roughness: 0.4,
+      metalness: 0.4,
+    }),
+    vendBody: new THREE.MeshStandardMaterial({ color: 0xd2d5d8, roughness: 0.45, metalness: 0.3 }),
+    vendHeader: new THREE.MeshBasicMaterial({ color: 0xdde8f2 }),
+    flap: new THREE.MeshStandardMaterial({
+      color: 0x1d2024,
+      roughness: 0.2,
+      transparent: true,
+      opacity: 0.85,
+    }),
+    binBody: new THREE.MeshStandardMaterial({ color: 0xcfcdc5, roughness: 0.65 }),
+    binCan: new THREE.MeshStandardMaterial({
+      map: binTexture('空き缶', '#2b6fb8'),
+      roughness: 0.6,
+    }),
+    binPet: new THREE.MeshStandardMaterial({
+      map: binTexture('ペットボトル', '#2f8a4a'),
+      roughness: 0.6,
+    }),
     nameSign: new THREE.MeshStandardMaterial({
       map: nameSignTexture(),
       roughness: 0.4,
@@ -576,11 +602,39 @@ export const buildBuilding = (scene) => {
     const lamp = fixture(x + 0.03, 4.9, 4.7, 0xdfe8ff, 26, 15, glow)
     lamp.outdoor = true
   })
-  // 自販機
-  box(b, mat.dark, -2.3, -1.2, 0, 1.83, 0.2, 0.95)
-  b.add(new THREE.PlaneGeometry(1.0, 1.75), mat.vending, at(-1.75, 0.92, 0.952))
-  box(b, mat.white, -1.05, -0.65, 0, 0.75, 0.45, 0.85)
-  fixture(-1.75, 1.3, 1.6, 0xeaf3ff, 5, 5, null).outdoor = true
+  // 自販機。中の明かりで見本の並びが光る。横に空き缶とペットボトルの回収箱
+  const vx0 = -2.3
+  const vx1 = -1.25
+  const vz = 0.92
+  const vm = (vx0 + vx1) / 2
+  box(b, mat.concrete, -2.4, -0.22, 0, 0.08, 0.12, 1.04)
+  box(b, mat.vendBody, vx0, vx1, 0.08, 1.85, 0.2, vz)
+  box(b, mat.vendBody, vx0 - 0.015, vx1 + 0.015, 1.85, 1.89, 0.17, vz + 0.05)
+  b.add(new THREE.PlaneGeometry(vx1 - vx0 - 0.08, 0.1), mat.vendHeader, at(vm, 1.77, vz + 0.002))
+  // 見本の窓。まわりの枠を前に出して、窓が奥にあるように見せる
+  b.add(new THREE.PlaneGeometry(0.93, 0.68), mat.vending, at(vm, 1.33, vz + 0.002))
+  b.add(new THREE.PlaneGeometry(0.93, 0.68), mat.glass, at(vm, 1.33, vz + 0.02))
+  box(b, mat.vendBody, vx0, vx1, 1.67, 1.71, vz, vz + 0.025)
+  box(b, mat.vendBody, vx0, vx1, 0.95, 0.99, vz, vz + 0.025)
+  box(b, mat.vendBody, vx0, vx0 + 0.04, 0.99, 1.67, vz, vz + 0.025)
+  box(b, mat.vendBody, vx1 - 0.04, vx1, 0.99, 1.67, vz, vz + 0.025)
+  // 下の広告と、硬貨とお札の入れ口
+  b.add(new THREE.PlaneGeometry(0.66, 0.56), mat.vendAd, at(vx0 + 0.05 + 0.33, 0.66, vz + 0.002))
+  box(b, mat.vendBody, vx1 - 0.31, vx1 - 0.04, 0.38, 0.94, vz, vz + 0.03)
+  b.add(new THREE.PlaneGeometry(0.25, 0.54), mat.vendCoin, at(vx1 - 0.175, 0.66, vz + 0.031))
+  // 取り出し口。黒い口の手前に、黒い板のふた
+  b.add(new THREE.PlaneGeometry(0.64, 0.2), mat.black, at(vx0 + 0.42, 0.23, vz + 0.002))
+  b.add(new THREE.PlaneGeometry(0.62, 0.18), mat.flap, at(vx0 + 0.42, 0.24, vz + 0.025, -0.18))
+  box(b, mat.vendBody, vx0 + 0.08, vx0 + 0.76, 0.1, 0.13, vz, vz + 0.06)
+  box(b, mat.vendBody, vx0 + 0.08, vx0 + 0.76, 0.33, 0.36, vz, vz + 0.04)
+  fixture(vm, 1.3, 1.6, 0xeaf3ff, 5, 5, null).outdoor = true
+  ;[
+    [-1.19, mat.binCan],
+    [-0.72, mat.binPet],
+  ].forEach(([x, label]) => {
+    box(b, mat.binBody, x, x + 0.42, 0.08, 0.95, 0.5, 0.9)
+    b.add(new THREE.PlaneGeometry(0.42, 0.84), label, at(x + 0.21, 0.515, 0.902))
+  })
 
   // ---------- 植え込みとアプローチ ----------
   ;[
