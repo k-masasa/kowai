@@ -83,10 +83,11 @@ export const floorTexture = () =>
  */
 export const wallTexture = () =>
   canvasTexture(512, 620, (ctx, w, h) => {
-    ctx.fillStyle = '#b3ab9c'
+    ctx.fillStyle = '#afa694'
     ctx.fillRect(0, 0, w, h)
-    speckle(ctx, w, h, 6000, ['#bdb5a6', '#a8a091', '#c3bcae'], 2)
-    stains(ctx, w, h, 10, '90, 75, 55', 0.18)
+    speckle(ctx, w, h, 6000, ['#b9b09f', '#a39a89', '#bfb7a7'], 2)
+    stains(ctx, w, h, 14, '90, 75, 55', 0.22)
+    speckle(ctx, w, h, 500, ['rgba(60, 50, 40, 0.25)'], 3)
   })
 
 /**
@@ -105,7 +106,7 @@ export const ceilingTexture = () =>
     ctx.fillStyle = '#6d6961'
     ctx.fillRect(0, 0, w, 3)
     ctx.fillRect(0, 0, 3, h)
-    stains(ctx, w, h, 4, '70, 60, 45', 0.2)
+    stains(ctx, w, h, 7, '90, 70, 40', 0.26)
   })
 
 /**
@@ -241,7 +242,7 @@ export const noticePaper = () => {
  */
 export const tileTexture = () =>
   canvasTexture(512, 512, (ctx, w, h) => {
-    ctx.fillStyle = '#857a6a'
+    ctx.fillStyle = '#6f6556'
     ctx.fillRect(0, 0, w, h)
     const rows = 20
     const th = h / rows
@@ -249,12 +250,12 @@ export const tileTexture = () =>
     for (let r = 0; r < rows; r++) {
       const off = (r % 2) * (tw / 2)
       for (let x = -tw; x < w + tw; x += tw) {
-        const v = Math.random() * 16 - 8
-        ctx.fillStyle = `rgb(${178 + v}, ${160 + v}, ${136 + v})`
+        const v = Math.random() * 16 - 8 - (Math.random() < 0.08 ? 18 : 0)
+        ctx.fillStyle = `rgb(${172 + v}, ${155 + v}, ${132 + v})`
         ctx.fillRect(x + off + 2, r * th + 2, tw - 4, th - 3)
       }
     }
-    stains(ctx, w, h, 8, '50, 42, 34', 0.14)
+    stains(ctx, w, h, 10, '50, 42, 34', 0.18)
   })
 
 /**
@@ -371,7 +372,20 @@ export const meterBoxTexture = () =>
     ctx.strokeStyle = 'rgba(70, 64, 56, 0.6)'
     ctx.lineWidth = 3
     ctx.strokeRect(4, 4, w - 8, h - 8)
-    stains(ctx, w, h, 4, '60, 50, 40', 0.2)
+    stains(ctx, w, h, 5, '60, 50, 40', 0.24)
+    const rust = ctx.createLinearGradient(0, h - 40, 0, h)
+    rust.addColorStop(0, 'rgba(120, 66, 30, 0)')
+    rust.addColorStop(1, 'rgba(120, 66, 30, 0.45)')
+    ctx.fillStyle = rust
+    ctx.fillRect(0, h - 40, w, 40)
+    for (let i = 0; i < 5; i++) {
+      const x = 16 + Math.random() * (w - 32)
+      const g = ctx.createLinearGradient(0, 74, 0, 74 + 50 + Math.random() * 60)
+      g.addColorStop(0, 'rgba(110, 60, 28, 0.4)')
+      g.addColorStop(1, 'rgba(110, 60, 28, 0)')
+      ctx.fillStyle = g
+      ctx.fillRect(x, 74, 2, 110)
+    }
   })
 
 /**
@@ -873,6 +887,63 @@ export const sidingTexture = (base) =>
       ctx.fillRect(0, y + 2, w, 1)
     }
     stains(ctx, w, h, 4, '40, 36, 30', 0.18)
+  })
+
+/**
+ * 外壁の雨だれ。上から下へ、細い黒ずみが垂れる。背景は透明
+ */
+export const streakTexture = () =>
+  canvasTexture(512, 256, (ctx, w, h) => {
+    ctx.clearRect(0, 0, w, h)
+    for (let i = 0; i < 26; i++) {
+      const x = Math.random() * w
+      const len = h * (0.3 + Math.random() * 0.7)
+      const g = ctx.createLinearGradient(0, 0, 0, len)
+      g.addColorStop(0, `rgba(38, 34, 28, ${0.25 + Math.random() * 0.3})`)
+      g.addColorStop(1, 'rgba(38, 34, 28, 0)')
+      ctx.fillStyle = g
+      ctx.fillRect(x, 0, 2 + Math.random() * 9, len)
+    }
+    const top = ctx.createLinearGradient(0, 0, 0, 24)
+    top.addColorStop(0, 'rgba(38, 34, 28, 0.35)')
+    top.addColorStop(1, 'rgba(38, 34, 28, 0)')
+    ctx.fillStyle = top
+    ctx.fillRect(0, 0, w, 24)
+  })
+
+/**
+ * 床の端にたまった汚れ。下の端 (壁ぎわ) が濃く、上へ行くほど薄い。背景は透明
+ */
+export const edgeDirtTexture = () =>
+  canvasTexture(256, 64, (ctx, w, h) => {
+    ctx.clearRect(0, 0, w, h)
+    const g = ctx.createLinearGradient(0, h, 0, 0)
+    g.addColorStop(0, 'rgba(22, 20, 16, 0.55)')
+    g.addColorStop(1, 'rgba(22, 20, 16, 0)')
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, w, h)
+    speckle(ctx, w, h, 600, ['rgba(15, 13, 10, 0.4)'], 2)
+  })
+
+/**
+ * 天井の雨じみ。輪のように縁が濃い。背景は透明
+ */
+export const waterStainTexture = () =>
+  canvasTexture(256, 256, (ctx, w, h) => {
+    ctx.clearRect(0, 0, w, h)
+    for (let i = 0; i < 4; i++) {
+      const x = w / 2 + (Math.random() - 0.5) * 80
+      const y = h / 2 + (Math.random() - 0.5) * 80
+      const r = 40 + Math.random() * 60
+      const g = ctx.createRadialGradient(x, y, r * 0.5, x, y, r)
+      g.addColorStop(0, 'rgba(110, 85, 50, 0.08)')
+      g.addColorStop(0.85, 'rgba(100, 72, 38, 0.35)')
+      g.addColorStop(1, 'rgba(100, 72, 38, 0)')
+      ctx.fillStyle = g
+      ctx.beginPath()
+      ctx.arc(x, y, r, 0, Math.PI * 2)
+      ctx.fill()
+    }
   })
 
 /**

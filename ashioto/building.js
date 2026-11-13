@@ -11,6 +11,7 @@ import {
   corrugatedTexture,
   concreteTexture,
   doorLeafTexture,
+  edgeDirtTexture,
   exitTexture,
   floorSign,
   floorTexture,
@@ -30,10 +31,12 @@ import {
   sidingTexture,
   signTexture,
   steelDoorTexture,
+  streakTexture,
   stoneTileTexture,
   tileTexture,
   vendingAdTexture,
   vendingTexture,
+  waterStainTexture,
   wallTexture,
   wireGlassTexture,
 } from './textures.js'
@@ -377,6 +380,24 @@ export const buildBuilding = (scene) => {
       roughness: 0.4,
     }),
     tubeGlow: new THREE.MeshBasicMaterial({ color: 0xeef4ff }),
+    streak: new THREE.MeshStandardMaterial({
+      map: streakTexture(),
+      transparent: true,
+      depthWrite: false,
+      roughness: 1,
+    }),
+    edgeDirt: new THREE.MeshStandardMaterial({
+      map: edgeDirtTexture(),
+      transparent: true,
+      depthWrite: false,
+      roughness: 1,
+    }),
+    waterStain: new THREE.MeshStandardMaterial({
+      map: waterStainTexture(),
+      transparent: true,
+      depthWrite: false,
+      roughness: 1,
+    }),
     glass: new THREE.MeshStandardMaterial({
       color: 0x7f8c98,
       roughness: 0.05,
@@ -1337,6 +1358,64 @@ export const buildBuilding = (scene) => {
       ),
     )
   }
+
+  // ---------- 古び ----------
+  // 雨だれ、床の端の汚れ、天井の雨じみ。どれも透ける絵を面に重ねて貼る
+
+  /**
+   * 透ける汚れの絵を1枚貼る。絵の横は u0 から uw の幅だけ使う
+   */
+  const decal = (mat0, w, h, x, y, z, ry, rx = 0, u0 = Math.random(), uw = 0.5, flipV = false) => {
+    const g = new THREE.PlaneGeometry(w, h)
+    const uv = g.attributes.uv
+    for (let k = 0; k < uv.count; k++) {
+      uv.setXY(k, u0 + uv.getX(k) * uw, flipV ? 1 - uv.getY(k) : uv.getY(k))
+    }
+    b.add(g, mat0, at(x, y, z, rx, ry))
+  }
+  for (let f = 1; f <= FLOORS; f++) {
+    const y = floorY(f)
+    // 腰壁の外側と、その下の床版の縁
+    const x0 = f === 1 ? HX1 : SX1
+    for (let x = x0; x < CX1; x += UNIT) {
+      const w = Math.min(UNIT, CX1 - x)
+      decal(mat.streak, w, 1.35, x + w / 2, y + 0.4, FRONT + 0.004, 0)
+    }
+    // 柱の正面
+    for (let k = 0; k <= UNITS / 2; k++) {
+      const x = Math.min(HX1 + UNIT * 2 * k, CX1 - 0.45)
+      decal(mat.streak, 0.45, 2.2, x + 0.225, y + FH - 1.1, FRONT + 0.304, 0, 0, Math.random(), 0.1)
+    }
+    // 廊下の床の、壁ぎわと腰壁ぎわ
+    const len = CX1 - HX1
+    decal(
+      mat.edgeDirt,
+      len,
+      0.16,
+      HX1 + len / 2,
+      y + 0.004,
+      CZ + 0.08,
+      0,
+      -Math.PI / 2,
+      0,
+      len / 2,
+      true,
+    )
+    decal(mat.edgeDirt, len, 0.16, HX1 + len / 2, y + 0.004, -0.08, 0, -Math.PI / 2, 0, len / 2)
+    // 廊下の天井の雨じみ
+    for (let k = 0; k < 3; k++) {
+      const size = 0.7 + Math.random() * 0.7
+      const x = HX1 + 2 + Math.random() * (len - 4)
+      decal(mat.waterStain, size, size, x, y + CEIL - 0.004, -0.45, 0, Math.PI / 2, 0, 1)
+    }
+    // 階段室の西の窓の下
+    const wy = y + HALF + 1.4
+    decal(mat.streak, 0.7, 1.6, -0.204, wy - 1.2, -4.2, -Math.PI / 2, 0, Math.random(), 0.12)
+  }
+  // 階段室の西と南の面、建物の東の端の、上からの雨だれ
+  decal(mat.streak, 9.15, 4, -0.204, top + 0.8, -4.43, -Math.PI / 2)
+  decal(mat.streak, 2.8, 3.5, 1.4, top + 1.05, FRONT + 0.004, 0)
+  decal(mat.streak, 9.15, 3.5, CX1 + 0.204, top - 1.65, -4.43, Math.PI / 2)
 
   b.build(root)
 
