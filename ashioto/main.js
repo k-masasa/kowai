@@ -21,6 +21,9 @@ const STORE = 'kowai.ashioto'
 const BACK_LIMIT = 6
 // 4階の廊下でここを過ぎたら、追いかけが始まる (x)
 const CHASE_X = 24
+// 1階から3階の廊下で、ここを過ぎると奥から明かりが消え、ここを過ぎると襲われる (x)
+const WRONG_WARN = 8.2
+const WRONG_DEATH = 11.6
 
 // 難しさごとの設定
 // days: 何日続けて帰れたら終わりか。途中でつかまったら、1日目からやり直し
@@ -125,6 +128,7 @@ const dayState = () => ({
   peekFor: 0,
   peekSeen: 0,
   peekWin: null,
+  wrong: null,
   cine: 0,
   timeline: [],
   homeFrom: null,
@@ -724,6 +728,55 @@ const downDeath = () => {
 }
 
 /**
+ * 1階から3階の廊下の奥へ行こうとして、うしろから襲われた。振り向かせて、目の前に顔を出す
+ */
+const wrongDeath = () => {
+  S.yaw += Math.PI
+  S.pitch = 0.02
+  die('そっちは、あなたの部屋じゃない。', 0.9)
+  faceToFace()
+}
+
+/**
+ * 廊下から出た時に、消した明かりを元に戻す
+ */
+const endWrongWay = () => {
+  building.fixtures.forEach((f, i) => {
+    if (f.corridor === S.wrong.floor) f.on = lightsAtStart[i].on
+  })
+  S.wrong = null
+}
+
+/**
+ * 1階から3階の廊下に入った時。奥から明かりが消えていき、さらに進むと、うしろから襲われる。
+ * かんたんでは、明かりが消えるだけ
+ */
+const updateWrongWay = (dt) => {
+  const m = /^C([123])$/.exec(S.tag)
+  if (!m) {
+    if (S.wrong) endWrongWay()
+    return
+  }
+  if (!S.wrong && S.pos.x > WRONG_WARN) {
+    S.wrong = { floor: Number(m[1]), next: 11, timer: 0 }
+    whisper('そっちじゃない。')
+    sound.whisper()
+  }
+  if (!S.wrong) return
+  S.wrong.timer -= dt
+  if (S.wrong.timer <= 0 && S.wrong.next >= 0) {
+    const lamp = building.fixtures.find(
+      (f) => f.corridor === S.wrong.floor && f.unit === S.wrong.next,
+    )
+    if (lamp) lamp.on = false
+    sound.click()
+    S.wrong.next -= 1
+    S.wrong.timer = 0.16
+  }
+  if (S.level.strict && S.pos.x > WRONG_DEATH) wrongDeath()
+}
+
+/**
  * 階段で、下りた高さを数える。上ると減る
  */
 const trackDown = (dy) => {
@@ -1037,6 +1090,8 @@ const updatePlay = (dt) => {
   if (S.mode !== 'play') return
   updateAhead(dt)
   updateChase(dt)
+  if (S.mode !== 'play') return
+  updateWrongWay(dt)
   if (S.mode !== 'play') return
   updateIdle(dt)
   updateTorch(dt)

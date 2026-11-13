@@ -1008,6 +1008,8 @@ export const buildBuilding = (scene) => {
       // 天井の照明 (部屋ごとに1つ)
       const light = ceilingLight(HX1 + UNIT * (i + 0.5), y + CEIL, -0.7, 0xfff4e6, 4, 6)
       if (Math.random() < 0.08) light.faulty = true
+      light.corridor = f
+      light.unit = i
     }
     wallZ(b, mat.paint, CZ, prev, CX1, y, y + CEIL, 1)
     wallX(b, mat.paint, CX1, CZ, 0, y, y + CEIL, -1)
