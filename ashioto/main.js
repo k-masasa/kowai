@@ -1,27 +1,33 @@
 import * as THREE from 'three'
 import './style.css'
-import { W, SEG, STAIR_Z, buildWorld } from './world.js'
-import { FH, MID, STAIR_DOOR_X } from './stairs.js'
+import { FH, FLOORS, buildBuilding, floorY } from './building.js'
+import { createLightPool } from './lights.js'
 import { createFigure } from './figure.js'
 import { createSound } from './sound.js'
 
 // あしおと
-// 夜のマンションの階段を4階まで上がり、内廊下の奥の412号室に帰る。階段と廊下はループしていて、周回するたびに
-// 自分の足音が増え、明かりが消え、最後は「見ていない間だけ近づく」顔の無い人に追われる。
-// 時刻、遊んだ回数、タブを離れていた時間を使う。データはブラウザの外に出さない。
+// 夜、マンションの前の道から歩いて帰る。階段を上がって、4階の廊下の一番奥の412号室に入れば終わり。
+// ふつう以上では、3階から4階へ上がったはずなのに、また3階に出ることがある。最後は4階の廊下で、
+// 見ていない間だけ近づく顔の無い人から逃げる。時刻、遊んだ回数、タブを離れていた時間を使う。データは外に出さない。
 
 const EYE = 1.55
-const WALK = 1.45
-const STRIDE = 0.72
-// 難しさごとの、顔の無い人の強さ
-// start: 最初に離れている距離、walk: 見ていない間の速さ、rush: 停電の間の速さ
+const WALK = 1.15
+const STRIDE = 0.68
+const STORE = 'kowai.ashioto'
+// 階段でこれだけ下りると死ぬ (m)
+const BACK_LIMIT = 6
+// 4階の廊下でここを過ぎたら、追いかけが始まる (x)
+const CHASE_X = 24
+
+// 難しさごとの設定
+// start: 追いかけの最初の距離、walk: 見ていない間の速さ、rush: 停電の間の速さ
 // gap: 停電の間隔 (遠い時、近い時)、dark: 停電の長さ (最短、ばらつき)、flash: 懐中電灯の明るさ
-// strict: うしろへ戻り続けると死ぬか、repeat: 階段で同じ階が続く回数の上限
+// strict: 階段を下り続けると死ぬか、repeat: 3階が続く回数
 // events: たまに起こる出来事の間隔 (最短、ばらつき)。懐中電灯が切れる / ドアノブが鳴る / 窓から覗く
 const LEVELS = {
   easy: {
     start: 11.5,
-    walk: 2.05,
+    walk: 2.0,
     rush: 4.2,
     gap: [4.2, 1.5],
     dark: [0.18, 0.32],
@@ -32,32 +38,27 @@ const LEVELS = {
   },
   normal: {
     start: 10.5,
-    walk: 2.3,
+    walk: 2.2,
     rush: 4.4,
     gap: [4.0, 1.4],
     dark: [0.18, 0.3],
     flash: 7,
     strict: true,
-    repeat: 2,
+    repeat: 3,
     events: { torch: [25, 20], knob: [10, 12], peek: [16, 12] },
   },
   hard: {
     start: 9.5,
-    walk: 2.6,
+    walk: 2.45,
     rush: 4.6,
     gap: [3.6, 1.3],
     dark: [0.2, 0.28],
     flash: 5.5,
     strict: true,
-    repeat: 3,
+    repeat: 4,
     events: { torch: [15, 15], knob: [7, 8], peek: [10, 10] },
   },
 }
-const STORE = 'kowai.ashioto'
-// うしろへこれだけ戻ると死ぬ (m)
-const BACK_LIMIT = 6
-// 帰る階
-const GOAL = 4
 
 /**
  * id で要素を取る
@@ -79,32 +80,15 @@ const memory = loadMemory()
 const S = {
   mode: 'title',
   level: LEVELS.easy,
-  back: 0,
-  door: null,
-  doorSide: 0,
-  pullFrom: null,
-  rushDir: 0,
-  zone: 'stairs',
-  floor: 1,
-  nextFloor: 2,
-  decided: false,
-  repeats: 0,
-  feet: 0,
-  slamIn: 0,
-  torchIn: 0,
-  torchWarn: 0,
-  torchOff: 0,
-  knobIn: 0,
-  peekIn: 0,
-  peekFor: 0,
-  peekSeen: 0,
   memory,
-  // 前に遊んだことがあると、1段早く進む
+  // 前に遊んだことがあると、1段早く怖くなる
   head: memory.visits > 0 ? 1 : 0,
-  lap: 0,
-  pos: new THREE.Vector3(0.6, EYE, -0.7),
-  yaw: 0,
-  pitch: 0,
+  pos: new THREE.Vector3(-8, 0, 2.0),
+  feet: 0,
+  yaw: -1.33,
+  pitch: 0.08,
+  tag: 'S',
+  prevTag: 'S',
   stride: 0,
   bob: 0,
   walking: false,
@@ -115,19 +99,32 @@ const S = {
   clockFrozen: false,
   lastSecond: -1,
   noticeStage: -1,
-  darkened: false,
+  inside: false,
+  onFourth: false,
+  loops: 0,
+  repeatLeft: 0,
+  looping: false,
   ahead: false,
-  aheadDone: false,
   vanishIn: 0,
   final: false,
   flickerIn: 0,
   darkFor: 0,
   beatIn: 0,
   moved: 0,
+  back: 0,
   hum: 0,
+  slamFor: 0,
   awayAt: 0,
   awayPending: false,
   whisperTimer: 0,
+  torchIn: 0,
+  torchWarn: 0,
+  torchOff: 0,
+  knobIn: 0,
+  peekIn: 0,
+  peekFor: 0,
+  peekSeen: 0,
+  peekWin: null,
   cine: 0,
   timeline: [],
   homeFrom: null,
@@ -149,16 +146,16 @@ const renderer = new THREE.WebGLRenderer({ antialias: true })
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 renderer.setSize(innerWidth, innerHeight)
 renderer.toneMapping = THREE.ACESFilmicToneMapping
-renderer.toneMappingExposure = 0.95
+renderer.toneMappingExposure = 1.0
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
 document.body.prepend(renderer.domElement)
 
 const scene = new THREE.Scene()
-scene.background = new THREE.Color(0x000000)
-scene.fog = new THREE.FogExp2(0x000000, 0.11)
+scene.background = new THREE.Color(0x05070b)
+scene.fog = new THREE.FogExp2(0x05070b, 0.05)
 
-const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.05, 60)
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.05, 140)
 scene.add(camera)
 
 const flashlight = new THREE.SpotLight(0xfff1dc, LEVELS.easy.flash, 22, Math.PI / 7, 0.5, 2)
@@ -170,18 +167,24 @@ flashlight.shadow.camera.near = 0.1
 flashlight.shadow.camera.far = 20
 flashlight.shadow.bias = -0.0005
 camera.add(flashlight, flashlight.target)
-scene.add(new THREE.HemisphereLight(0x8a90a0, 0x1a1612, 0.06))
+scene.add(new THREE.HemisphereLight(0x3a4458, 0x0c0c0f, 0.35))
+const moon = new THREE.DirectionalLight(0x8090b0, 0.25)
+moon.position.set(-20, 40, 30)
+scene.add(moon)
 
-const world = buildWorld(scene)
+const building = buildBuilding(scene)
+const pool = createLightPool(scene, building.fixtures, 10)
 const figure = createFigure()
 figure.group.visible = false
 scene.add(figure.group)
 const sound = createSound()
+const homeDoor = building.doors.find((d) => d.home)
+const eye = new THREE.Vector3()
 
 /**
  * 今の怖さの段階
  */
-const level = () => S.lap + S.head
+const level = () => S.loops + S.head
 
 /**
  * xz 平面での距離
@@ -205,6 +208,12 @@ const dateText = (date) =>
 const lerpAngle = (a, b, t) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * t
 
 /**
+ * 出来事の次の間隔を決める
+ * @param range - [最短, ばらつき] (秒)
+ */
+const nextIn = ([min, spread]) => min + Math.random() * spread
+
+/**
  * タイトルに出す一言。前に遊んだ記録と、今の時刻で変える
  */
 const greetingText = () => {
@@ -218,7 +227,7 @@ const greetingText = () => {
 }
 
 /**
- * 段階ごとの、貼り紙の文面
+ * 段階ごとの、エントランスの貼り紙の文面
  */
 const noticeLines = (stage) => {
   if (stage === 2) return ['412号室の方へ', '', '足音が、', 'ふたり分します。']
@@ -229,7 +238,7 @@ const noticeLines = (stage) => {
     'お知らせ',
     '',
     `${dateText(S.startedAt)}の夜、`,
-    '共用廊下の照明を',
+    '共用部の照明を',
     '点検します。',
     '',
     '管理会社',
@@ -249,7 +258,7 @@ const updateNotice = () => {
   }
   if (stage === S.noticeStage) return
   S.noticeStage = stage
-  world.notice.draw(noticeLines(stage))
+  building.notice.draw(noticeLines(stage))
 }
 
 /**
@@ -300,15 +309,6 @@ const fadeOut = (seconds) => {
 }
 
 /**
- * 黒くした画面を戻す
- */
-const fadeIn = (seconds) => {
-  const el = $('fade')
-  el.style.transition = `opacity ${seconds}s`
-  el.style.opacity = 0
-}
-
-/**
  * マウスを画面にロックする。できなくても、ドラッグで見回せる
  */
 const lockPointer = () => {
@@ -318,13 +318,14 @@ const lockPointer = () => {
 
 /**
  * タイトルから遊び始める
- * @param level - 'easy' / 'normal' / 'hard'
+ * @param levelName - 'easy' / 'normal' / 'hard'
  * @param lock - マウスを画面にロックするか。ロックすると、マウスを動かすだけで見回せる
  */
-const begin = (level = 'easy', lock = true) => {
+const begin = (levelName = 'easy', lock = true) => {
   if (S.mode !== 'title') return
   S.mode = 'play'
-  S.level = LEVELS[level] || LEVELS.easy
+  S.level = LEVELS[levelName] || LEVELS.easy
+  S.repeatLeft = S.level.repeat
   flashlight.intensity = S.level.flash
   S.locked = lock
   S.startedAt = new Date()
@@ -332,9 +333,8 @@ const begin = (level = 'easy', lock = true) => {
   saveMemory()
   $('title').classList.add('hidden')
   sound.start()
-  sound.setDrone(0.15)
+  sound.setDrone(0.12)
   updateNotice()
-  world.stairs.setFloors(S.floor, S.nextFloor, GOAL)
   if (S.level.events) {
     S.torchIn = nextIn(S.level.events.torch)
     S.knobIn = nextIn(S.level.events.knob)
@@ -372,41 +372,40 @@ const applyAway = () => {
   if (level() < 1) return
   whisper('どこに行ってたの？')
   sound.whisper()
-  if (S.zone === 'stairs') return
-  if (!S.final) {
-    world.openDoorNear(S.pos.z)
+  if (S.final) {
+    const fig = figure.group.position
+    const d = flat(fig, S.pos)
+    const pull = Math.min(4, Math.max(d - 2.2, 0))
+    fig.x += ((S.pos.x - fig.x) / d) * pull
+    fig.z += ((S.pos.z - fig.z) / d) * pull
     return
   }
-  const fig = figure.group.position
-  const d = flat(fig, S.pos)
-  const pull = Math.min(4, Math.max(d - 2.2, 0))
-  fig.x += ((S.pos.x - fig.x) / d) * pull
-  fig.z += ((S.pos.z - fig.z) / d) * pull
+  const door = building.doors.find(
+    (d) => !d.home && Math.abs(d.y - S.feet) < 1 && flat(d, S.pos) < 6 && d.hinge.rotation.y === 0,
+  )
+  if (door) door.hinge.rotation.y = -0.45
 }
 
 /**
- * 明かりを全部消す / 付ける
+ * 建物の中の明かりを全部消す / 付ける
  */
 const setDark = (dark) => {
   S.dark = dark
-  flashlight.intensity = dark ? 0 : S.level.flash
 }
 
 /**
- * 先の方に、背中を向けて立たせる
+ * 3階と4階の間の踊り場に、背中を向けて立たせる
  */
 const showAhead = () => {
   S.ahead = true
-  S.aheadDone = true
-  S.clockFrozen = true
-  figure.group.position.set(0.28, 0, -21.6)
+  figure.group.position.set(0.9, floorY(3) + FH / 2, -4.35)
   figure.randomPose(0)
-  figure.face(S.pos, true)
+  figure.group.rotation.y = Math.PI
   figure.group.visible = true
 }
 
 /**
- * 先に立っている人を消す
+ * 踊り場に立っている人を消す
  */
 const hideAhead = () => {
   S.ahead = false
@@ -415,50 +414,99 @@ const hideAhead = () => {
 }
 
 /**
- * 最後の周回。うしろの暗がりに立たせて、見ていない間だけ近づかせる
+ * 踊り場の人に近づいたら、照明のちらつきの間に消す
+ */
+const updateAhead = (dt) => {
+  if (!S.ahead) return
+  if (S.vanishIn > 0) {
+    S.vanishIn -= dt
+    if (S.vanishIn <= 0) hideAhead()
+    return
+  }
+  const fp = figure.group.position
+  if (Math.abs(fp.y - S.feet) > 2.2 || flat(fp, S.pos) > 3.2) return
+  const lamp = building.fixtures.find((f) => f.stair === 3.5)
+  if (lamp) lamp.stutter = 0.5
+  sound.flicker()
+  S.vanishIn = 0.12
+}
+
+/**
+ * 3階から4階へ上がったはずが、また3階に出た
+ */
+const onLoop = () => {
+  S.loops += 1
+  sound.whisper()
+  updateNotice()
+  if (S.loops >= 2) {
+    S.clockFrozen = true
+    building.fixtures.forEach((f) => {
+      if (f.stair && f.stair < 3) f.on = false
+    })
+  }
+  if (S.loops === 2) showAhead()
+  if (S.loops >= 3) {
+    building.fixtures.forEach((f) => {
+      if (f.stair === 3 || f.stair === 3.5) f.faulty = true
+    })
+  }
+}
+
+/**
+ * 階段の場所が変わった時の出来事。3階と4階の間の踊り場で、次に着く階を決める
+ */
+const onStairs = () => {
+  if (S.tag === 'M3' && S.prevTag === 'A3' && !S.looping && S.repeatLeft > 0) {
+    S.looping = true
+    building.signs.find((s) => s.floor === 4).draw('3F')
+  }
+  if (S.tag !== 'L4' || !S.looping) return
+  // 4階に着いた瞬間に、そっくりな3階へ移す
+  S.feet -= FH
+  if (S.ahead) figure.group.position.y -= FH
+  S.looping = false
+  S.repeatLeft -= 1
+  building.signs.find((s) => s.floor === 4).draw('4F')
+  S.tag = 'L3'
+  onLoop()
+}
+
+/**
+ * 4階に着いた。412号室のドアが少し開いて、明かりが漏れている
+ */
+const reachFourth = () => {
+  S.onFourth = true
+  homeDoor.hinge.rotation.y = -0.6
+  building.room.visible = true
+  building.homeLamp.on = true
+}
+
+/**
+ * 最後の追いかけ。うしろの階段の扉が閉まり、廊下の入口に顔の無い人が立つ
  */
 const startChase = () => {
   S.final = true
-  world.setFinal()
-  figure.group.position.set(0, 0, S.pos.z + S.level.start)
+  building.zones.find((z) => z.tag === 'D4').on = false
+  S.slamFor = 0.35
+  sound.slam(0.6)
+  const x = Math.max(7.3, S.pos.x - S.level.start)
+  figure.group.position.set(x, floorY(4), -0.7)
   figure.randomPose(0)
   figure.face(S.pos)
   figure.group.visible = true
   S.flickerIn = 3
   S.darkFor = 0
-  sound.slam(0.45)
   console.log('%cうしろ', 'color:#a33;font-size:13px')
 }
 
 /**
- * 周回が変わった時に、廊下の様子を段階に合わせて変える
- * @param dir - 前に進んで越えたら 'forward'、うしろに下がって越えたら 'back'
+ * 4階の防火扉を閉める動き
  */
-const applyLap = (dir) => {
-  const L = level()
-  world.resetLamps(L >= 2)
-  if (S.ahead) hideAhead()
-  if (L >= 2 && !S.darkened) {
-    S.darkened = true
-    sound.clunk()
-  }
-  updateNotice()
-  if (dir !== 'forward') return
-  if (L >= 3 && !S.aheadDone) {
-    showAhead()
-    return
-  }
-  if (L >= 4) startChase()
-}
-
-/**
- * 廊下の反対の端へ移す。顔の無い人も一緒に動かすので、見た目は変わらない
- */
-const wrap = (dz, dir) => {
-  S.pos.z += dz
-  figure.group.position.z += dz
-  S.lap += 1
-  applyLap(dir)
+const updateSlam = (dt) => {
+  if (S.slamFor <= 0) return
+  S.slamFor = Math.max(0, S.slamFor - dt)
+  const door = building.fireDoors.find((d) => d.floor === 4)
+  door.group.rotation.y = Math.PI * (S.slamFor / 0.35)
 }
 
 /**
@@ -514,33 +562,17 @@ const goHome = () => {
 }
 
 /**
- * つかまった。振り向かせて、目の前に顔を出す
- */
-const caught = () => {
-  die('caught', 'あなたの歩き方を、おぼえました。', 0.9)
-  const fig = figure.group.position
-  S.yaw = Math.atan2(-(fig.x - S.pos.x), -(fig.z - S.pos.z))
-  S.pitch = 0.04
-  fig.set(S.pos.x - Math.sin(S.yaw) * 0.42, S.feet, S.pos.z - Math.cos(S.yaw) * 0.42)
-  figure.face(S.pos)
-  figure.scarePose()
-  sound.scare()
-}
-
-/**
  * 死んだ時の共通の処理。記録を残して、暗転とエンディングの予定を組む
- * @param mode - 死に方。毎フレームの演出を切り替えるのに使う
  * @param line - エンディングに出す一文
  * @param at - 暗転するまでの秒数
  */
-const die = (mode, line, at) => {
-  S.mode = mode
+const die = (line, at) => {
+  S.mode = 'caught'
   S.cine = 0
   S.memory.last = 'caught'
   saveMemory()
   setDark(false)
   S.ahead = false
-  S.vanishIn = 0
   sound.setDrone(0)
   const time = clockText(new Date())
   S.timeline = [
@@ -551,50 +583,9 @@ const die = (mode, line, at) => {
 }
 
 /**
- * 近くのドアが開いて、中から出てきた手に引きずり込まれる
+ * 目の前に顔の無い人を立たせる
  */
-const pulledIn = () => {
-  const door = [...world.here.doors].sort(
-    (a, b) => Math.abs(a.z - S.pos.z) - Math.abs(b.z - S.pos.z),
-  )[0]
-  die('door', 'ドアの向こうに、連れていかれました。', 1.3)
-  S.door = door
-  S.doorSide = Math.sign(door.group.position.x)
-  S.pullFrom = S.pos.clone()
-  door.hinge.rotation.y = -1.35
-  figure.group.position.set(S.doorSide * (W / 2 - 0.25), 0, door.z)
-  figure.face(S.pos)
-  figure.scarePose()
-  figure.group.visible = true
-  S.yaw = Math.atan2(-(figure.group.position.x - S.pos.x), -(door.z - S.pos.z))
-  S.pitch = 0
-  sound.slam(0.9)
-  sound.scare()
-}
-
-/**
- * 廊下の先から、顔の無い人がものすごい速さで走ってくる
- */
-const rushed = () => {
-  die('rush', '戻る道は、ありませんでした。', 1.25)
-  S.rushDir = -Math.cos(S.yaw) <= 0 ? -1 : 1
-  S.yaw = S.rushDir < 0 ? 0 : Math.PI
-  S.pitch = 0
-  figure.group.position.set(0, 0, S.pos.z + S.rushDir * 13)
-  figure.face(S.pos)
-  figure.scarePose()
-  figure.group.visible = true
-  for (let i = 0; i < 10; i++) {
-    sound.step(0.15 + i * 0.08, { muffle: 0.6 - i * 0.06, when: i * 0.11 })
-  }
-  S.timeline.unshift([1.08, () => sound.scare()])
-}
-
-/**
- * 階段を下りすぎた。振り向くと、目の前に立っている
- */
-const downDeath = () => {
-  die('caught', '下には、もう戻れません。', 0.9)
+const faceToFace = () => {
   figure.group.position.set(
     S.pos.x - Math.sin(S.yaw) * 0.42,
     S.feet,
@@ -607,156 +598,31 @@ const downDeath = () => {
 }
 
 /**
+ * つかまった。振り向かせて、目の前に顔を出す
+ */
+const caught = () => {
+  const fig = figure.group.position
+  S.yaw = Math.atan2(-(fig.x - S.pos.x), -(fig.z - S.pos.z))
+  S.pitch = 0.04
+  die('あなたの歩き方を、おぼえました。', 0.9)
+  faceToFace()
+}
+
+/**
+ * 階段を下りすぎた。目の前に立っている
+ */
+const downDeath = () => {
+  die('下には、もう戻れません。', 0.9)
+  faceToFace()
+}
+
+/**
  * 階段で、下りた高さを数える。上ると減る
  */
 const trackDown = (dy) => {
-  if (!S.level.strict) return
+  if (!S.level.strict || !S.inside) return
   S.back = Math.max(0, S.back - dy * 1.45)
-  if (S.back > BACK_LIMIT) backDeath()
-}
-
-/**
- * 上の階に着いた。同じ階が続くこともある
- */
-const arriveUp = () => {
-  if (S.nextFloor === S.floor) {
-    S.repeats += 1
-    sound.whisper()
-  }
-  S.floor = S.nextFloor
-  S.nextFloor = S.floor + 1
-  S.decided = false
-  world.stairs.setFloors(S.floor, S.nextFloor, GOAL)
-}
-
-/**
- * 下の階に着いた
- */
-const arriveDown = () => {
-  S.floor -= 1
-  S.nextFloor = S.floor + 1
-  S.decided = false
-  world.stairs.setFloors(S.floor, S.nextFloor, GOAL)
-}
-
-/**
- * 中間の踊り場まで来たら、上に見せる階を決める。難しさによっては、同じ階がまた続く
- */
-const decideNext = () => {
-  S.decided = true
-  const canRepeat = S.floor >= 2 && S.floor < GOAL && S.repeats < S.level.repeat
-  if (!canRepeat || Math.random() > 0.55) return
-  S.nextFloor = S.floor
-  world.stairs.setFloors(S.floor, S.nextFloor, GOAL)
-}
-
-/**
- * 4階のドアから廊下に出る。暗転している間に、廊下へ移す
- */
-const enterHall = () => {
-  S.mode = 'shift'
-  S.cine = 0
-  keys.clear()
-  fadeOut(0.3)
-  S.timeline = [
-    [0.4, () => switchToHall()],
-    [0.55, () => fadeIn(0.6)],
-    [0.6, () => (S.mode = 'play')],
-  ]
-}
-
-/**
- * 階段室を隠して、廊下の階段のドアの前に立たせる。うしろでドアが閉まる
- */
-const switchToHall = () => {
-  S.zone = 'hall'
-  world.setVisible(true)
-  S.pos.set(-0.3, EYE, STAIR_Z - 0.7)
-  S.feet = 0
-  S.yaw = 0
-  S.pitch = 0
-  S.back = 0
-  S.lap = 0
-  world.here.stairDoor.hinge.rotation.y = -1.0
-  S.slamIn = 0.9
-}
-
-/**
- * 廊下に出た少しあとで、うしろの階段のドアを閉める
- */
-const updateSlam = (dt) => {
-  if (S.slamIn <= 0) return
-  S.slamIn -= dt
-  if (S.slamIn > 0) return
-  world.here.stairDoor.hinge.rotation.y = 0
-  sound.slam(0.7)
-}
-
-/**
- * 階段室での動き。足元の高さを決めて、1階分上り下りしたら上下の階を入れ替える
- * @param prevX - 動く前の x
- */
-const moveOnStairs = (prevX) => {
-  world.stairs.clamp(S.pos, prevX)
-  const before = S.feet
-  S.feet = world.stairs.heightAt(S.pos.x, S.pos.z, S.feet)
-  trackDown(S.feet - before)
-  if (S.mode !== 'play') return
-  if (S.feet >= FH - 0.001) {
-    S.feet -= FH
-    arriveUp()
-  } else if (S.feet < -0.001) {
-    S.feet += FH
-    arriveDown()
-  }
-  if (!S.decided && S.pos.z < MID) decideNext()
-  const atDoor = Math.abs(S.pos.x - STAIR_DOOR_X) < 0.42 && S.pos.z > -0.4
-  if (S.floor === GOAL && S.feet < 0.05 && atDoor) enterHall()
-}
-
-/**
- * うしろへ戻りすぎた。死に方はランダムで選ぶ
- */
-const backDeath = () => {
-  if (S.zone === 'stairs') {
-    downDeath()
-    return
-  }
-  if (Math.random() < 0.5) {
-    pulledIn()
-    return
-  }
-  rushed()
-}
-
-/**
- * うしろへ戻った距離を数える。前へ進むと減る
- */
-const trackBack = (dz) => {
-  if (!S.level.strict || S.final || S.zone !== 'hall') return
-  S.back = Math.max(0, S.back + dz)
-  if (S.back > BACK_LIMIT) backDeath()
-}
-
-/**
- * 廊下の端の処理。最後の周回の前はループさせ、最後の周回では突き当たりで止める
- */
-const bounds = () => {
-  if (S.final) {
-    S.pos.z = Math.min(S.pos.z, SEG - 1)
-    if (S.pos.z > -SEG + 0.9) return
-    if (Math.abs(S.pos.x) < 0.42) {
-      goHome()
-      return
-    }
-    S.pos.z = -SEG + 0.9
-    return
-  }
-  if (S.pos.z < -SEG) {
-    wrap(SEG, 'forward')
-    return
-  }
-  if (S.pos.z > 0) wrap(-SEG, 'back')
+  if (S.back > BACK_LIMIT) downDeath()
 }
 
 const keys = new Set()
@@ -769,6 +635,7 @@ const pressed = (...codes) => (codes.some((code) => keys.has(code)) ? 1 : 0)
 const forward = new THREE.Vector3()
 const side = new THREE.Vector3()
 const velocity = new THREE.Vector3()
+const before = new THREE.Vector3()
 
 /**
  * 歩いた距離に合わせて、足音を鳴らす
@@ -781,16 +648,32 @@ const walkSounds = (dist) => {
   }
   S.walking = true
   S.idle = 0
-  const before = Math.floor(S.stride / STRIDE)
+  const prev = Math.floor(S.stride / STRIDE)
   S.stride += dist
-  if (Math.floor(S.stride / STRIDE) !== before) footstep()
+  if (Math.floor(S.stride / STRIDE) !== prev) footstep()
 }
 
 /**
- * キーでプレイヤーを動かす
+ * 場所に応じた出来事。建物に入る、階段、4階、追いかけ、412号室
+ */
+const onPlace = () => {
+  if (!S.inside && S.tag === 'H1' && S.pos.z < -0.8) {
+    S.inside = true
+    building.zones.find((z) => z.tag === 'E').on = false
+    sound.slam(0.25)
+  }
+  onStairs()
+  if (!S.onFourth && !S.looping && (S.tag === 'H4' || S.tag === 'C4')) reachFourth()
+  if (S.onFourth && !S.final && S.tag === 'C4' && S.pos.x > CHASE_X) startChase()
+  const atHome = S.tag === 'C4' && Math.abs(S.pos.x - homeDoor.x) < 0.45 && S.pos.z < -0.95
+  if (S.onFourth && atHome) goHome()
+}
+
+/**
+ * キーでプレイヤーを動かす。歩ける区画からはみ出さないようにして、足元の高さも決める
  */
 const move = (dt) => {
-  S.yaw += (pressed('ArrowLeft') - pressed('ArrowRight')) * 1.9 * dt
+  S.yaw += (pressed('ArrowLeft') - pressed('ArrowRight')) * 1.8 * dt
   const f = pressed('KeyW', 'ArrowUp') - pressed('KeyS', 'ArrowDown')
   const s = pressed('KeyD') - pressed('KeyA')
   forward.set(-Math.sin(S.yaw), 0, -Math.cos(S.yaw))
@@ -798,44 +681,19 @@ const move = (dt) => {
   velocity.set(0, 0, 0).addScaledVector(forward, f).addScaledVector(side, s)
   if (velocity.lengthSq() > 1) velocity.normalize()
   velocity.multiplyScalar(f < 0 ? WALK * 0.65 : WALK)
-  const prevX = S.pos.x
+  before.copy(S.pos)
+  const feet = S.feet
   S.pos.addScaledVector(velocity, dt)
-  walkSounds(velocity.length() * dt)
-  if (S.zone === 'stairs') {
-    moveOnStairs(prevX)
-    return
+  const r = building.resolve(S.pos, S.feet)
+  S.feet = r.feet
+  if (r.zone && r.zone.tag !== S.tag) {
+    S.prevTag = S.tag
+    S.tag = r.zone.tag
   }
-  S.pos.x = THREE.MathUtils.clamp(S.pos.x, -W / 2 + 0.28, W / 2 - 0.28)
-  trackBack(velocity.z * dt)
+  walkSounds(flat(before, S.pos))
+  trackDown(S.feet - feet)
   if (S.mode !== 'play') return
-  bounds()
-}
-
-/**
- * 通り過ぎた蛍光灯を、うしろから消していく
- */
-const updatePassedLamps = () => {
-  if (level() < 2 || S.final) return
-  world.here.lamps.forEach((lamp) => {
-    if (lamp.target === 0 || lamp.dying > 0) return
-    if (S.pos.z < lamp.z - 1.6) world.killLamp(lamp)
-  })
-}
-
-/**
- * 先に立っている人に近づいたら、蛍光灯のちらつきの間に消す
- */
-const updateAhead = (dt) => {
-  if (!S.ahead) return
-  if (S.vanishIn > 0) {
-    S.vanishIn -= dt
-    if (S.vanishIn <= 0) hideAhead()
-    return
-  }
-  if (flat(S.pos, figure.group.position) > 7.8) return
-  world.here.lamps[3].stutter = 0.45
-  sound.flicker()
-  S.vanishIn = 0.12
+  onPlace()
 }
 
 const frustum = new THREE.Frustum()
@@ -856,7 +714,8 @@ const updateFrustum = () => {
  */
 const inView = () => {
   updateFrustum()
-  sphere.center.copy(figure.group.position).setY(1.0)
+  sphere.center.copy(figure.group.position)
+  sphere.center.y += 1.0
   return frustum.intersectsSphere(sphere)
 }
 
@@ -870,7 +729,7 @@ const chaseSpeed = () => {
 }
 
 /**
- * 最後の周回の、停電のようなちらつき。近づかれているほど間隔が短い
+ * 最後の追いかけの、停電のようなちらつき。近づかれているほど間隔が短い
  * @param near - 0 から 1。近いほど大きい
  */
 const flickers = (dt, near) => {
@@ -901,7 +760,7 @@ const heartbeat = (dt, near) => {
 }
 
 /**
- * 追いかけっこの1フレーム分
+ * 追いかけの1フレーム分
  */
 const updateChase = (dt) => {
   if (!S.final) return
@@ -941,12 +800,6 @@ const updateIdle = (dt) => {
 }
 
 /**
- * 出来事の次の間隔を決める
- * @param range - [最短, ばらつき] (秒)
- */
-const nextIn = ([min, spread]) => min + Math.random() * spread
-
-/**
  * 懐中電灯の明るさを決める。ふつう以上では、たまにちらついてから数秒切れる
  */
 const updateTorch = (dt) => {
@@ -977,66 +830,91 @@ const updateTorch = (dt) => {
   flashlight.intensity = power
 }
 
+const knobPoint = new THREE.Vector3()
+
 /**
- * ふつう以上では、近くのドアのノブがたまにガチャガチャ回る
+ * ふつう以上では、見えているドアのノブがたまにガチャガチャ回る
  */
 const updateKnob = (dt) => {
   const ev = S.level.events
-  if (!ev || S.zone !== 'hall') return
+  if (!ev) return
   S.knobIn -= dt
   if (S.knobIn > 0) return
-  const door = world.here.doors.find(
-    (d) => Math.abs(d.z - S.pos.z) < 3.5 && d.rattle <= 0 && d.hinge.rotation.y === 0,
-  )
+  updateFrustum()
+  const door = building.doors.find((d) => {
+    if (d.home || d.rattle > 0 || d.hinge.rotation.y !== 0 || Math.abs(d.y - S.feet) > 1) {
+      return false
+    }
+    const dist = flat(d, S.pos)
+    if (dist < 2.5 || dist > 9) return false
+    knobPoint.set(d.x + 0.33, d.y + 1.0, d.z)
+    return frustum.containsPoint(knobPoint)
+  })
   if (!door) {
-    S.knobIn = 2
+    S.knobIn = 1.5
     return
   }
-  door.rattle = 1.1
+  door.rattle = 1.2
   sound.rattle()
   S.knobIn = nextIn(ev.knob)
 }
 
-const eye = new THREE.Vector3()
-
 /**
- * 今いる場所から見える窓の場所
- */
-const windowSpots = () => (S.zone === 'stairs' ? world.stairs.windowSpots() : world.windowSpots())
-
-/**
- * ふつう以上では、見ていない間に窓の外に人が立つ。見つかると少しして消える
+ * ふつう以上では、見ていない間に窓の向こうに人が立つ。見つかると少しして消える
  */
 const updatePeek = (dt) => {
   const ev = S.level.events
   if (!ev) return
-  eye.set(S.pos.x, S.feet + EYE, S.pos.z)
   updateFrustum()
-  const spots = windowSpots()
-  if (S.peekFor > 0) {
+  if (S.peekWin) {
+    const p = S.peekWin.pos
     S.peekFor -= dt
-    if (spots.some((p) => frustum.containsPoint(p) && p.distanceTo(eye) < 14)) S.peekSeen += dt
-    const close = spots.some((p) => p.distanceTo(eye) < 2.4)
+    if (frustum.containsPoint(p) && p.distanceTo(eye) < 14) S.peekSeen += dt
+    const close = p.distanceTo(eye) < 2.2
     if (S.peekFor > 0 && S.peekSeen < 1.2 && !close) return
-    S.peekFor = 0
-    world.glass.draw(false)
+    S.peekWin.mesh.material = S.peekWin.normal
+    S.peekWin = null
     sound.flicker()
     S.peekIn = nextIn(ev.peek)
     return
   }
   S.peekIn -= dt
   if (S.peekIn > 0) return
-  const hidden = spots.some((p) => {
-    const d = p.distanceTo(eye)
-    return d > 3 && d < 12 && !frustum.containsPoint(p)
+  const win = building.windows.find((w) => {
+    const d = w.pos.distanceTo(eye)
+    if (Math.abs(w.pos.y - eye.y) > 1.6) return false
+    return d > 3 && d < 11 && !frustum.containsPoint(w.pos)
   })
-  if (!hidden) {
+  if (!win) {
     S.peekIn = 1.5
     return
   }
-  world.glass.draw(true)
-  S.peekFor = 12
+  win.mesh.material = win.peek
+  S.peekWin = win
+  S.peekFor = 14
   S.peekSeen = 0
+}
+
+/**
+ * エントランスの自動ドアを開け閉めする。中に入った後は、もう開かない
+ */
+const updateEntrance = (dt) => {
+  const near = !S.inside && Math.hypot(S.pos.x - 5.0, S.pos.z) < 2.2
+  building.entrance.forEach((g) => {
+    const target = g.userData.home + g.userData.side * (near ? 0.85 : 0)
+    g.position.x += (target - g.position.x) * Math.min(1, dt * 4)
+  })
+}
+
+/**
+ * ドアノブのガチャガチャの動き
+ */
+const updateRattle = (dt) => {
+  building.doors.forEach((d) => {
+    if (d.rattle <= 0) return
+    d.rattle = Math.max(0, d.rattle - dt)
+    d.lever.rotation.z = d.rattle > 0 ? Math.sin(d.rattle * 45) * 0.35 : 0
+  })
 }
 
 /**
@@ -1045,7 +923,6 @@ const updatePeek = (dt) => {
 const updatePlay = (dt) => {
   move(dt)
   if (S.mode !== 'play') return
-  updatePassedLamps()
   updateAhead(dt)
   updateChase(dt)
   if (S.mode !== 'play') return
@@ -1066,43 +943,11 @@ const runTimeline = () => {
 }
 
 /**
- * つかまった直後の演出。懐中電灯がちらつく
+ * 死んだ直後の演出。懐中電灯がちらつく
  */
 const updateCaught = (dt) => {
   S.cine += dt
   if (S.cine < 0.9) flashlight.intensity = Math.random() < 0.4 ? 0 : S.level.flash * 1.3
-  runTimeline()
-}
-
-/**
- * ドアに引きずり込まれる演出。揺れながら、ドアの方へ引っぱられる
- */
-const updateDoorDeath = (dt) => {
-  S.cine += dt
-  const k = THREE.MathUtils.clamp((S.cine - 0.3) / 1.0, 0, 1)
-  const e = k * k
-  S.pos.x = THREE.MathUtils.lerp(S.pullFrom.x, S.doorSide * (W / 2 - 0.12), e)
-  S.pos.z = THREE.MathUtils.lerp(S.pullFrom.z, S.door.z, e)
-  figure.group.position.x = THREE.MathUtils.lerp(
-    S.doorSide * (W / 2 - 0.25),
-    S.doorSide * (W / 2 + 0.2),
-    e,
-  )
-  S.pitch = Math.sin(S.cine * 40) * 0.04 * k
-  if (S.cine < 1.3) flashlight.intensity = Math.random() < 0.35 ? 0 : S.level.flash * 1.3
-  runTimeline()
-}
-
-/**
- * 前から走ってくる演出。目の前まで来たら止まる
- */
-const updateRush = (dt) => {
-  S.cine += dt
-  const fig = figure.group.position
-  const d = Math.abs(fig.z - S.pos.z)
-  if (d > 0.45) fig.z -= S.rushDir * Math.min(12 * dt, d - 0.45)
-  figure.face(S.pos)
-  if (d < 2) flashlight.intensity = Math.random() < 0.4 ? 0 : S.level.flash * 1.3
   runTimeline()
 }
 
@@ -1113,43 +958,44 @@ const updateHome = (dt) => {
   S.cine += dt
   const k = Math.min(S.cine / 1.5, 1)
   const e = k * k * (3 - 2 * k)
-  world.end.door.hinge.rotation.y = -0.62 - e * 0.9
-  S.pos.z = THREE.MathUtils.lerp(S.homeFrom.z, -SEG - 0.9, e)
-  S.pos.x = THREE.MathUtils.lerp(S.homeFrom.x, 0.1, e)
+  homeDoor.hinge.rotation.y = -0.6 - e * 0.9
+  S.pos.x = THREE.MathUtils.lerp(S.homeFrom.x, homeDoor.x + 0.1, e)
+  S.pos.z = THREE.MathUtils.lerp(S.homeFrom.z, homeDoor.z - 1.0, e)
   S.yaw = lerpAngle(S.homeYaw, 0, e)
   S.pitch *= 0.9
   runTimeline()
 }
 
 /**
- * 壁の時計を、秒が変わった時だけ描き直す。途中からは、遊び始めた時刻で止まる
+ * エントランスの時計を、秒が変わった時だけ描き直す。途中からは、遊び始めた時刻で止まる
  */
 const updateClock = () => {
   const now = S.clockFrozen ? S.startedAt : new Date()
   const second = now.getMinutes() * 60 + now.getSeconds()
   if (second === S.lastSecond) return
   S.lastSecond = second
-  world.clock.draw(now)
+  building.clock.draw(now)
 }
 
 /**
- * 近くの蛍光灯のうなりを、大きさが変わった時だけ伝える
+ * 蛍光灯のうなりを、大きさが変わった時だけ伝える
  */
-const updateHum = () => {
-  const hum = S.dark || S.mode === 'title' || S.zone === 'stairs' ? 0 : world.humAt(S.pos.z)
-  if (Math.abs(hum - S.hum) < 0.03) return
-  S.hum = hum
-  sound.setHum(hum)
+const updateHum = (hum) => {
+  const target = S.mode === 'title' ? 0 : hum
+  if (Math.abs(target - S.hum) < 0.03) return
+  S.hum = target
+  sound.setHum(target)
 }
 
 /**
  * カメラをプレイヤーの目の位置に置く。歩いている間は、少し頭が揺れる
  */
 const placeCamera = (dt) => {
-  const target = S.walking ? -Math.abs(Math.sin((S.stride / STRIDE) * Math.PI)) * 0.028 : 0
+  const target = S.walking ? -Math.abs(Math.sin((S.stride / STRIDE) * Math.PI)) * 0.026 : 0
   S.bob += (target - S.bob) * Math.min(1, dt * 12)
   camera.position.set(S.pos.x, S.feet + EYE + S.bob, S.pos.z)
   camera.rotation.set(S.pitch, S.yaw, 0, 'YXZ')
+  eye.copy(camera.position)
 }
 
 const timer = new THREE.Timer()
@@ -1163,17 +1009,12 @@ const tick = (time) => {
   if (S.mode === 'play') updatePlay(dt)
   if (S.mode === 'caught') updateCaught(dt)
   if (S.mode === 'home') updateHome(dt)
-  if (S.mode === 'shift') {
-    S.cine += dt
-    runTimeline()
-  }
-  if (S.mode === 'play') updateSlam(dt)
-  if (S.mode === 'door') updateDoorDeath(dt)
-  if (S.mode === 'rush') updateRush(dt)
-  world.update(dt, S.dark, () => sound.clunk())
+  updateSlam(dt)
+  updateRattle(dt)
+  updateEntrance(dt)
   updateClock()
-  updateHum()
   placeCamera(dt)
+  updateHum(pool.update(eye, S.dark, dt))
   renderer.render(scene, camera)
 }
 
@@ -1225,8 +1066,6 @@ $('ending').addEventListener('click', backToTitle)
 
 $('greeting').textContent = greetingText()
 updateNotice()
-world.setVisible(false)
-world.stairs.setFloors(S.floor, S.nextFloor, GOAL)
 renderer.setAnimationLoop(tick)
 
 // 開発中だけ、確かめるための入口を置く
@@ -1234,16 +1073,31 @@ if (import.meta.env.DEV) {
   window.__ashioto = {
     S,
     figure,
-    world,
-    start: (level = 'easy') => begin(level, false),
-    hall: () => switchToHall(),
-    lap: (n) => {
-      if (S.zone === 'stairs') switchToHall()
-      S.lap = n - 1
-      S.pos.z = -SEG - 0.01
-      bounds()
+    building,
+    floors: FLOORS,
+    pick: (nx, ny) => {
+      const ray = new THREE.Raycaster()
+      ray.setFromCamera(new THREE.Vector2(nx, ny), camera)
+      return ray
+        .intersectObjects(scene.children, true)
+        .slice(0, 4)
+        .map((h) => ({
+          d: h.distance.toFixed(2),
+          p: h.point.toArray().map((v) => v.toFixed(2)),
+          color: h.object.material.color?.getHexString(),
+          tile: h.object.material.userData?.tile,
+          n: h.face?.normal.toArray().map((v) => v.toFixed(2)),
+        }))
     },
-    die: (kind) => (kind === 'door' ? pulledIn() : rushed()),
+    start: (levelName = 'easy') => begin(levelName, false),
+    tp: (x, floor, z, yaw = S.yaw) => {
+      S.pos.set(x, 0, z)
+      S.feet = floorY(floor)
+      S.yaw = yaw
+      if (floor === 1 && z > -0.8) return
+      S.inside = true
+      building.zones.find((zz) => zz.tag === 'E').on = false
+    },
     look: (yaw, pitch = 0) => {
       S.yaw = yaw
       S.pitch = pitch

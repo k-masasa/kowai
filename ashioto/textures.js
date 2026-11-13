@@ -79,7 +79,7 @@ export const floorTexture = () =>
   })
 
 /**
- * 古くなったクリーム色の壁。1枚で、横は約2m、縦は天井まで
+ * 古くなったクリーム色の塗装の壁。1枚で2m 四方
  */
 export const wallTexture = () =>
   canvasTexture(512, 620, (ctx, w, h) => {
@@ -87,11 +87,6 @@ export const wallTexture = () =>
     ctx.fillRect(0, 0, w, h)
     speckle(ctx, w, h, 6000, ['#bdb5a6', '#a8a091', '#c3bcae'], 2)
     stains(ctx, w, h, 10, '90, 75, 55', 0.18)
-    const grime = ctx.createLinearGradient(0, h * 0.78, 0, h)
-    grime.addColorStop(0, 'rgba(60, 50, 38, 0)')
-    grime.addColorStop(1, 'rgba(60, 50, 38, 0.35)')
-    ctx.fillStyle = grime
-    ctx.fillRect(0, h * 0.78, w, h * 0.22)
   })
 
 /**
@@ -242,126 +237,402 @@ export const noticePaper = () => {
 }
 
 /**
- * 怖い顔を描く。黒くくぼんだ目と、耳まで裂けた口
- * @param cx - 顔の中心の x
- * @param cy - 顔の中心の y
- * @param r - 顔の半分の幅 (px)
+ * 外壁の二丁掛けタイル。1枚で1.2m 四方
  */
-const scaryFace = (ctx, cx, cy, r) => {
-  const bruise = ctx.createRadialGradient(cx, cy - 0.15 * r, 0.1 * r, cx, cy - 0.15 * r, 0.95 * r)
-  bruise.addColorStop(0, 'rgba(50, 35, 40, 0.5)')
-  bruise.addColorStop(1, 'rgba(50, 35, 40, 0)')
-  ctx.fillStyle = bruise
-  ctx.fillRect(cx - r, cy - r, r * 2, r * 2)
-  ;[
-    [-0.38, -0.18, 0.2, 0.3],
-    [0.4, -0.12, 0.19, 0.27],
-  ].forEach(([dx, dy, rx, ry]) => {
-    const x = cx + dx * r
-    const y = cy + dy * r
-    ctx.fillStyle = 'rgba(8, 4, 6, 0.85)'
-    for (let i = 0; i < 3; i++) {
-      const sx = x + (Math.random() - 0.5) * rx * r
-      ctx.fillRect(sx, y, 0.03 * r, (0.5 + Math.random() * 0.6) * r)
-    }
-    const socket = ctx.createRadialGradient(x, y, 0, x, y, rx * r * 1.5)
-    socket.addColorStop(0, 'rgba(0, 0, 0, 1)')
-    socket.addColorStop(0.7, 'rgba(0, 0, 0, 1)')
-    socket.addColorStop(1, 'rgba(0, 0, 0, 0)')
-    ctx.fillStyle = socket
-    ctx.beginPath()
-    ctx.ellipse(x, y, rx * r * 1.5, ry * r * 1.5, 0, 0, Math.PI * 2)
-    ctx.fill()
-  })
-  const my = cy + 0.4 * r
-  ctx.fillStyle = '#030102'
-  ctx.beginPath()
-  ctx.moveTo(cx - 1.0 * r, my - 0.42 * r)
-  ctx.quadraticCurveTo(cx, my + 0.15 * r, cx + 1.0 * r, my - 0.36 * r)
-  ctx.quadraticCurveTo(cx + 0.1 * r, my + 0.75 * r, cx - 1.0 * r, my - 0.42 * r)
-  ctx.fill()
-  ctx.fillStyle = '#cfc6b2'
-  for (let i = -5; i <= 5; i++) {
-    const t = (i + 6) / 12
-    const x = cx - 1.0 * r + t * 2.0 * r
-    const y =
-      (1 - t) * (1 - t) * (my - 0.42 * r) +
-      2 * (1 - t) * t * (my + 0.15 * r) +
-      t * t * (my - 0.36 * r)
-    const tw = (0.05 + Math.random() * 0.04) * r
-    ctx.beginPath()
-    ctx.moveTo(x - tw, y)
-    ctx.lineTo(x + tw, y)
-    ctx.lineTo(x + (Math.random() - 0.5) * tw, y + (0.1 + Math.random() * 0.1) * r)
-    ctx.fill()
-  }
-}
-
-/**
- * 顔の無い人の頭に巻く、怖い顔のテクスチャ。球の正面 (u = 0.25) に顔を描く
- */
-export const faceTexture = () =>
-  canvasTexture(512, 256, (ctx, w, h) => {
-    ctx.fillStyle = '#a39b8f'
+export const tileTexture = () =>
+  canvasTexture(512, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#857a6a'
     ctx.fillRect(0, 0, w, h)
-    speckle(ctx, w, h, 2500, ['#a69e92', '#bdb5a8', '#9c948a'], 1.5)
-    scaryFace(ctx, w * 0.25, h * 0.52, 58)
+    const rows = 20
+    const th = h / rows
+    const tw = w / 5.3
+    for (let r = 0; r < rows; r++) {
+      const off = (r % 2) * (tw / 2)
+      for (let x = -tw; x < w + tw; x += tw) {
+        const v = Math.random() * 16 - 8
+        ctx.fillStyle = `rgb(${178 + v}, ${160 + v}, ${136 + v})`
+        ctx.fillRect(x + off + 2, r * th + 2, tw - 4, th - 3)
+      }
+    }
+    stains(ctx, w, h, 8, '50, 42, 34', 0.14)
   })
 
 /**
- * 夜の窓ガラス。draw(peek) で、外から覗いている顔を出したり消したりする
+ * 打ちっぱなしに近い、塗装の古いコンクリート。1枚で1.5m 四方
  */
-export const windowGlass = () => {
+export const concreteTexture = () =>
+  canvasTexture(512, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#8b8780'
+    ctx.fillRect(0, 0, w, h)
+    speckle(ctx, w, h, 7000, ['#95918a', '#7f7b74', '#9c988f', '#77736c'], 2)
+    stains(ctx, w, h, 10, '40, 36, 30', 0.18)
+  })
+
+/**
+ * エントランスの床の石目タイル。1枚で1.2m 四方 (600mm 角が4枚)
+ */
+export const stoneTileTexture = () =>
+  canvasTexture(512, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#8c857a'
+    ctx.fillRect(0, 0, w, h)
+    for (let i = 0; i < 2; i++) {
+      for (let j = 0; j < 2; j++) {
+        const v = Math.random() * 12 - 6
+        ctx.fillStyle = `rgb(${186 + v}, ${178 + v}, ${165 + v})`
+        ctx.fillRect(i * 256 + 2, j * 256 + 2, 252, 252)
+      }
+    }
+    speckle(ctx, w, h, 5000, ['rgba(120, 112, 100, 0.5)', 'rgba(210, 204, 192, 0.5)'], 2.5)
+    stains(ctx, w, h, 5, '90, 80, 66', 0.12)
+  })
+
+/**
+ * 夜のアスファルト。1枚で3m 四方
+ */
+export const asphaltTexture = () =>
+  canvasTexture(512, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#2e2f31'
+    ctx.fillRect(0, 0, w, h)
+    speckle(ctx, w, h, 14000, ['#3a3b3d', '#252628', '#434446', '#1d1e20'], 2)
+    stains(ctx, w, h, 6, '10, 10, 12', 0.3)
+  })
+
+/**
+ * 歩道のインターロッキング。1枚で1m 四方
+ */
+export const paverTexture = () =>
+  canvasTexture(512, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#5a554e'
+    ctx.fillRect(0, 0, w, h)
+    const bw = w / 5
+    const bh = h / 10
+    for (let r = 0; r < 10; r++) {
+      const off = (r % 2) * (bw / 2)
+      for (let x = -bw; x < w + bw; x += bw) {
+        const v = Math.random() * 14 - 7
+        ctx.fillStyle = `rgb(${130 + v}, ${122 + v}, ${112 + v})`
+        ctx.fillRect(x + off + 2, r * bh + 2, bw - 4, bh - 4)
+      }
+    }
+    stains(ctx, w, h, 6, '30, 28, 24', 0.25)
+  })
+
+/**
+ * 植え込みの低木
+ */
+export const hedgeTexture = () =>
+  canvasTexture(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#1d2a1c'
+    ctx.fillRect(0, 0, w, h)
+    speckle(ctx, w, h, 5000, ['#2c3d29', '#16211a', '#384c32', '#0f1710'], 4)
+  })
+
+/**
+ * 玄関ドア。郵便受けとのぞき穴は絵で描く
+ */
+export const doorLeafTexture = () =>
+  canvasTexture(256, 596, (ctx, w, h) => {
+    ctx.fillStyle = '#4d4036'
+    ctx.fillRect(0, 0, w, h)
+    for (let x = 0; x < w; x += 2) {
+      ctx.fillStyle = `rgba(0, 0, 0, ${Math.random() * 0.07})`
+      ctx.fillRect(x, 0, 1, h)
+    }
+    ctx.strokeStyle = 'rgba(20, 15, 12, 0.5)'
+    ctx.lineWidth = 3
+    ctx.strokeRect(14, 14, w - 28, h - 28)
+    ctx.fillStyle = '#9c978e'
+    ctx.fillRect(w / 2 - 50, h * 0.575 - 9, 100, 18)
+    ctx.fillStyle = '#1b1814'
+    ctx.fillRect(w / 2 - 44, h * 0.575 - 4, 88, 8)
+    ctx.fillStyle = '#a7a299'
+    ctx.beginPath()
+    ctx.arc(w / 2, h * 0.275, 6, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = 'rgba(20, 16, 12, 0.35)'
+    ctx.fillRect(0, h - 60, w, 60)
+    stains(ctx, w, h, 4, '15, 12, 10', 0.25)
+  })
+
+/**
+ * メーターボックスの扉。上下にガラリがある
+ */
+export const meterBoxTexture = () =>
+  canvasTexture(128, 384, (ctx, w, h) => {
+    ctx.fillStyle = '#bdb6a7'
+    ctx.fillRect(0, 0, w, h)
+    ctx.fillStyle = '#8f897c'
+    for (let i = 0; i < 6; i++) {
+      ctx.fillRect(16, 20 + i * 9, w - 32, 4)
+      ctx.fillRect(16, h - 74 + i * 9, w - 32, 4)
+    }
+    ctx.fillStyle = '#6e6a61'
+    ctx.fillRect(w - 24, h / 2 - 12, 8, 24)
+    ctx.strokeStyle = 'rgba(70, 64, 56, 0.6)'
+    ctx.lineWidth = 3
+    ctx.strokeRect(4, 4, w - 8, h - 8)
+    stains(ctx, w, h, 4, '60, 50, 40', 0.2)
+  })
+
+/**
+ * 1つの階の部屋番号札を、1枚の絵に並べる。i 番目の札は、横 1/12 の幅
+ */
+export const plateAtlas = (floor) =>
+  canvasTexture(1536, 128, (ctx) => {
+    for (let i = 0; i < 12; i++) {
+      const x = i * 128
+      ctx.fillStyle = '#d4cec0'
+      ctx.fillRect(x, 0, 128, 128)
+      ctx.strokeStyle = '#8f897d'
+      ctx.lineWidth = 6
+      ctx.strokeRect(x + 4, 22, 120, 84)
+      centerText(
+        ctx,
+        `${floor}${String(i + 1).padStart(2, '0')}`,
+        x + 64,
+        66,
+        `600 52px ${GOTHIC}`,
+        '#2b2824',
+      )
+    }
+  })
+
+/**
+ * 集合ポスト。12列 × 4段
+ */
+export const mailboxTexture = () =>
+  canvasTexture(1024, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#5c5a55'
+    ctx.fillRect(0, 0, w, h)
+    const cw = w / 12
+    const ch = h / 4
+    for (let r = 0; r < 4; r++) {
+      for (let c = 0; c < 12; c++) {
+        const x = c * cw
+        const y = r * ch
+        ctx.fillStyle = '#b9b5ac'
+        ctx.fillRect(x + 3, y + 3, cw - 6, ch - 6)
+        ctx.fillStyle = '#e6e2d8'
+        ctx.fillRect(x + 10, y + 12, cw - 20, 20)
+        centerText(
+          ctx,
+          `${4 - r}${String(c + 1).padStart(2, '0')}`,
+          x + cw / 2,
+          y + 22,
+          `600 16px ${GOTHIC}`,
+          '#2b2824',
+        )
+        ctx.fillStyle = '#2e2c28'
+        ctx.beginPath()
+        ctx.arc(x + cw / 2, y + ch * 0.62, 9, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.fillStyle = '#7d7970'
+        ctx.fillRect(x + 10, y + ch - 20, cw - 20, 6)
+      }
+    }
+  })
+
+/**
+ * 階段室の壁に描く階の表示。draw(text) で書き直す。背景は透明
+ */
+export const floorSign = () => {
   let ctx = null
-  const tex = canvasTexture(256, 288, (c) => {
+  const tex = canvasTexture(256, 160, (c) => {
     ctx = c
   })
 
   /**
-   * 窓を描く。peek が true なら、ガラスに顔と手を押し付けている人を描く
+   * 壁にペンキで描いたような、階の名前を書く
    */
-  const draw = (peek) => {
-    const w = 256
-    const h = 288
-    const sky = ctx.createLinearGradient(0, 0, 0, h)
-    sky.addColorStop(0, '#0b1018')
-    sky.addColorStop(1, '#04060a')
-    ctx.fillStyle = sky
-    ctx.fillRect(0, 0, w, h)
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.05)'
-    ctx.fillRect(30, 0, 18, h)
-    ctx.fillRect(58, 0, 6, h)
-    if (peek) {
-      const skin = ctx.createRadialGradient(w / 2, 118, 6, w / 2, 126, 66)
-      skin.addColorStop(0, '#8e887e')
-      skin.addColorStop(1, '#2f2c28')
-      ctx.fillStyle = skin
-      ctx.beginPath()
-      ctx.ellipse(w / 2, 124, 56, 70, 0.06, 0, Math.PI * 2)
-      ctx.fill()
-      scaryFace(ctx, w / 2, 130, 50)
-      ctx.fillStyle = '#050506'
-      ctx.beginPath()
-      ctx.ellipse(w / 2 - 2, 86, 60, 42, 0.06, Math.PI, Math.PI * 2)
-      ctx.fill()
-      ;[52, 204].forEach((x) => {
-        const hand = ctx.createRadialGradient(x, 214, 2, x, 218, 34)
-        hand.addColorStop(0, '#77716a')
-        hand.addColorStop(1, '#1d1b19')
-        ctx.fillStyle = hand
-        ctx.beginPath()
-        ctx.ellipse(x, 218, 22, 32, 0, 0, Math.PI * 2)
-        ctx.fill()
-      })
-    }
-    ctx.strokeStyle = '#2a2824'
-    ctx.lineWidth = 5
-    ctx.beginPath()
-    ctx.moveTo(w / 2, 0)
-    ctx.lineTo(w / 2, h)
-    ctx.stroke()
+  const draw = (text) => {
+    ctx.clearRect(0, 0, 256, 160)
+    centerText(ctx, text, 128, 84, `700 118px ${GOTHIC}`, 'rgba(48, 46, 43, 0.92)')
     tex.needsUpdate = true
   }
 
   return { tex, draw }
 }
+
+/**
+ * 緑の非常口の表示
+ */
+export const exitTexture = () =>
+  canvasTexture(256, 96, (ctx, w, h) => {
+    ctx.fillStyle = '#1d8f47'
+    ctx.fillRect(0, 0, w, h)
+    ctx.fillStyle = '#f2f7ee'
+    ctx.fillRect(14, 14, 54, 68)
+    ctx.fillStyle = '#1d8f47'
+    ctx.beginPath()
+    ctx.arc(46, 30, 7, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillRect(30, 40, 22, 8)
+    ctx.fillRect(38, 44, 8, 22)
+    ctx.fillRect(28, 62, 14, 8)
+    ctx.fillRect(44, 62, 8, 16)
+    centerText(ctx, '非常口', 162, 50, `700 46px ${GOTHIC}`, '#f2f7ee')
+  })
+
+/**
+ * 自販機の正面。光るのは上の見本の段
+ */
+export const vendingTexture = () =>
+  canvasTexture(512, 896, (ctx, w, h) => {
+    ctx.fillStyle = '#d9dde2'
+    ctx.fillRect(0, 0, w, h)
+    ctx.fillStyle = '#eef4f9'
+    ctx.fillRect(24, 24, w - 48, 520)
+    const colors = [
+      '#c0392b',
+      '#2e86c1',
+      '#f1c40f',
+      '#27ae60',
+      '#e67e22',
+      '#8e44ad',
+      '#ecf0f1',
+      '#34495e',
+    ]
+    for (let r = 0; r < 4; r++) {
+      for (let c = 0; c < 8; c++) {
+        const x = 40 + c * 54
+        const y = 44 + r * 124
+        ctx.fillStyle = colors[(r * 3 + c) % colors.length]
+        ctx.fillRect(x + 8, y, 30, 86)
+        ctx.fillStyle = '#2b2b2b'
+        ctx.fillRect(x + 4, y + 94, 38, 14)
+        ctx.fillStyle = '#ff5544'
+        ctx.fillRect(x + 12, y + 97, 22, 8)
+      }
+    }
+    ctx.fillStyle = '#9aa0a6'
+    ctx.fillRect(24, 580, w - 48, 160)
+    ctx.fillStyle = '#1b1d20'
+    ctx.fillRect(60, 770, w - 120, 90)
+    ctx.fillRect(w - 110, 600, 50, 80)
+  })
+
+/**
+ * 建物の名前の看板
+ */
+export const nameSignTexture = () =>
+  canvasTexture(1024, 96, (ctx, w, h) => {
+    ctx.fillStyle = '#2b2722'
+    ctx.fillRect(0, 0, w, h)
+    centerText(ctx, 'MAISON TSUKIMI', w / 2 - 90, h / 2 + 2, `500 54px ${MINCHO}`, '#c9ad73')
+    centerText(ctx, 'メゾン月見', w - 150, h / 2 + 2, `500 40px ${MINCHO}`, '#c9ad73')
+  })
+
+/**
+ * 白地に黒い文字の貼り紙。行ごとに書く
+ */
+export const signTexture = (lines, w = 256, h = 320) =>
+  canvasTexture(w, h, (ctx) => {
+    ctx.fillStyle = '#efece4'
+    ctx.fillRect(0, 0, w, h)
+    lines.forEach((line, i) => {
+      const size = i === 0 ? 44 : 22
+      centerText(
+        ctx,
+        line,
+        w / 2,
+        60 + i * 52,
+        `700 ${size}px ${GOTHIC}`,
+        i === 0 ? '#b3241c' : '#262320',
+      )
+    })
+  })
+
+/**
+ * くもりガラス。dark は暗い部屋、lit は明かりの点いた部屋、peek はすぐ裏に人が立っている
+ */
+export const frostedTexture = (mode) =>
+  canvasTexture(128, 160, (ctx, w, h) => {
+    if (mode === 'dark') {
+      ctx.fillStyle = '#1f2125'
+      ctx.fillRect(0, 0, w, h)
+    } else {
+      const glow = ctx.createRadialGradient(w / 2, h * 0.45, 10, w / 2, h / 2, 110)
+      glow.addColorStop(0, '#e2d3b0')
+      glow.addColorStop(1, '#8e7f62')
+      ctx.fillStyle = glow
+      ctx.fillRect(0, 0, w, h)
+    }
+    for (let i = 0; i < 900; i++) {
+      ctx.fillStyle = Math.random() < 0.5 ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)'
+      ctx.beginPath()
+      ctx.arc(Math.random() * w, Math.random() * h, 1 + Math.random() * 2, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    if (mode !== 'peek') return
+    ctx.filter = 'blur(7px)'
+    ctx.fillStyle = 'rgba(12, 10, 9, 0.92)'
+    ctx.beginPath()
+    ctx.ellipse(w / 2, 58, 26, 33, 0, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillRect(w / 2 - 50, 92, 100, 80)
+    ctx.fillStyle = 'rgba(30, 24, 20, 0.95)'
+    ;[26, 102].forEach((x) => {
+      ctx.beginPath()
+      ctx.ellipse(x, 88, 10, 15, 0, 0, Math.PI * 2)
+      ctx.fill()
+    })
+    ctx.filter = 'none'
+  })
+
+/**
+ * 階段の踊り場の網入りガラス。peek が true なら、外にのっぺらぼうの顔が押し付けられている
+ */
+export const wireGlassTexture = (peek) =>
+  canvasTexture(256, 320, (ctx, w, h) => {
+    ctx.fillStyle = '#1a1f27'
+    ctx.fillRect(0, 0, w, h)
+    speckle(ctx, w, h, 3000, ['rgba(255, 255, 255, 0.05)', 'rgba(0, 0, 0, 0.1)'], 2)
+    if (peek) {
+      ctx.filter = 'blur(5px)'
+      ctx.fillStyle = '#8c867c'
+      ctx.beginPath()
+      ctx.ellipse(w / 2, 140, 50, 64, 0.05, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#0a0a0b'
+      ctx.beginPath()
+      ctx.ellipse(w / 2, 104, 56, 44, 0.05, Math.PI, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#6f6a62'
+      ;[54, 202].forEach((x) => {
+        ctx.beginPath()
+        ctx.ellipse(x, 220, 22, 32, 0, 0, Math.PI * 2)
+        ctx.fill()
+      })
+      ctx.filter = 'none'
+    }
+    ctx.strokeStyle = 'rgba(150, 150, 150, 0.35)'
+    ctx.lineWidth = 1
+    for (let i = 0; i <= w; i += 16) {
+      ctx.beginPath()
+      ctx.moveTo(i, 0)
+      ctx.lineTo(i, h)
+      ctx.stroke()
+    }
+    for (let j = 0; j <= h; j += 16) {
+      ctx.beginPath()
+      ctx.moveTo(0, j)
+      ctx.lineTo(w, j)
+      ctx.stroke()
+    }
+  })
+
+/**
+ * 向かいの家の壁。ところどころ窓に明かりが点いている
+ */
+export const neighborTexture = () =>
+  canvasTexture(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#1c1d21'
+    ctx.fillRect(0, 0, w, h)
+    for (let r = 0; r < 4; r++) {
+      for (let c = 0; c < 4; c++) {
+        const lit = Math.random() < 0.18
+        ctx.fillStyle = lit ? '#d9b77a' : '#0d0e10'
+        ctx.fillRect(18 + c * 60, 18 + r * 60, 30, 36)
+      }
+    }
+  })
