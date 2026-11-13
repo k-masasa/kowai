@@ -913,7 +913,8 @@ export const buildBuilding = (scene) => {
   b.add(new THREE.PlaneGeometry(2.6, 0.17), mat.nameSign, at(5.0, 2.65, 1.505))
   ceilingLight(5.0, 2.55, 0.9, 0xffe3bf, 5, 6).outdoor = true
   zones.push(zone('E', 4.35, 5.65, -0.5, 1.25, () => 0))
-  zones.push(zone('S', -38, 88, 1.25, 2.75, () => 0))
+  // 前の道。始めの場所 (x = -8) より西へは戻れない
+  zones.push(zone('S', -9.2, 88, 1.25, 2.75, () => 0))
   // 集合ポスト、掲示板、時計
   box(b, mat.mailbox, HX1 - 0.32, HX1, 0.3, 1.9, -4.55, -1.75)
   box(b, mat.trim, 3.05, 4.35, 0.95, 1.95, BACK_Z, BACK_Z + 0.03)
