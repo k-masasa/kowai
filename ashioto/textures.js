@@ -859,17 +859,156 @@ export const wireGlassTexture = (peek) =>
   })
 
 /**
- * 向かいの家の壁。ところどころ窓に明かりが点いている
+ * 家の外壁のサイディング。横に細い目地が通る。1枚で 2m 四方
  */
-export const neighborTexture = () =>
+export const sidingTexture = (base) =>
   canvasTexture(256, 256, (ctx, w, h) => {
-    ctx.fillStyle = '#1c1d21'
+    ctx.fillStyle = base
+    ctx.fillRect(0, 0, w, h)
+    speckle(ctx, w, h, 2500, ['rgba(255, 255, 255, 0.05)', 'rgba(0, 0, 0, 0.07)'], 1.5)
+    for (let y = 0; y < h; y += 16) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.22)'
+      ctx.fillRect(0, y, w, 2)
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.06)'
+      ctx.fillRect(0, y + 2, w, 1)
+    }
+    stains(ctx, w, h, 4, '40, 36, 30', 0.18)
+  })
+
+/**
+ * ブロック塀。1枚で 0.8m 四方に、横 0.4m × 縦 0.2m のブロックが並ぶ
+ */
+export const blockTexture = () =>
+  canvasTexture(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#6d6c67'
     ctx.fillRect(0, 0, w, h)
     for (let r = 0; r < 4; r++) {
-      for (let c = 0; c < 4; c++) {
-        const lit = Math.random() < 0.18
-        ctx.fillStyle = lit ? '#d9b77a' : '#0d0e10'
-        ctx.fillRect(18 + c * 60, 18 + r * 60, 30, 36)
+      for (let c = 0; c < 2; c++) {
+        const tone = 0.9 + Math.random() * 0.2
+        ctx.fillStyle = `rgb(${Math.round(138 * tone)}, ${Math.round(136 * tone)}, ${Math.round(128 * tone)})`
+        ctx.fillRect(c * 128 + 3, r * 64 + 3, 122, 58)
       }
     }
+    speckle(ctx, w, h, 3000, ['rgba(255, 255, 255, 0.06)', 'rgba(0, 0, 0, 0.12)'], 2)
+    stains(ctx, w, h, 5, '40, 45, 30', 0.35)
   })
+
+/**
+ * 古いトタンの波板。縦に波が通り、ところどころさびている。1枚で 1m 四方
+ */
+export const corrugatedTexture = () =>
+  canvasTexture(256, 256, (ctx, w, h) => {
+    for (let x = 0; x < w; x += 16) {
+      const g = ctx.createLinearGradient(x, 0, x + 16, 0)
+      g.addColorStop(0, '#6f7471')
+      g.addColorStop(0.5, '#a3a8a4')
+      g.addColorStop(1, '#6f7471')
+      ctx.fillStyle = g
+      ctx.fillRect(x, 0, 16, h)
+    }
+    stains(ctx, w, h, 7, '120, 70, 35', 0.45)
+    speckle(ctx, w, h, 1500, ['rgba(110, 60, 30, 0.3)', 'rgba(0, 0, 0, 0.1)'], 2)
+  })
+
+/**
+ * 自転車のかごの金網。すき間は透ける
+ */
+export const meshTexture = () =>
+  canvasTexture(64, 64, (ctx, w, h) => {
+    ctx.clearRect(0, 0, w, h)
+    ctx.strokeStyle = '#b8bcc0'
+    ctx.lineWidth = 3
+    for (let i = 0; i <= w; i += 16) {
+      ctx.beginPath()
+      ctx.moveTo(i, 0)
+      ctx.lineTo(i, h)
+      ctx.moveTo(0, i)
+      ctx.lineTo(w, i)
+      ctx.stroke()
+    }
+  })
+
+/**
+ * 2階建ての家の正面。窓とドアを描く。glow は、明かりの点いた窓と玄関の灯りだけを描いた絵
+ * @param seed - 外壁の色と、どの窓に明かりが点いているかを決める番号
+ */
+export const houseFacade = (seed) => {
+  const colors = ['#8a8274', '#6f7478', '#9a8b74', '#7a6f66']
+  const lit = [seed % 3 === 0, seed % 2 === 1, seed % 4 === 2]
+  const wins = [
+    { x: 36, y: 214, w: 176, h: 128, lit: lit[0] },
+    { x: 66, y: 56, w: 112, h: 84, lit: lit[1] },
+    { x: 300, y: 56, w: 112, h: 84, lit: lit[2] },
+  ]
+  const door = { x: 330, y: 206, w: 72, h: 150 }
+  const lamp = seed % 2 === 0
+
+  /**
+   * 窓を1つ描く。明かりが点いていればカーテン越しの暖色、消えていれば暗いガラス
+   */
+  const drawWindow = (ctx, win, glowOnly) => {
+    if (glowOnly) {
+      if (!win.lit) return
+      const cx = win.x + win.w / 2
+      const cy = win.y + win.h / 2
+      const g = ctx.createRadialGradient(cx, cy, 4, cx, cy, win.w * 0.7)
+      g.addColorStop(0, '#b98d55')
+      g.addColorStop(1, '#5e4024')
+      ctx.fillStyle = g
+      ctx.fillRect(win.x + 6, win.y + 6, win.w - 12, win.h - 12)
+      for (let x = win.x + 6; x < win.x + win.w - 6; x += 9) {
+        ctx.fillStyle = 'rgba(40, 24, 8, 0.12)'
+        ctx.fillRect(x, win.y + 6, 4, win.h - 12)
+      }
+      return
+    }
+    ctx.fillStyle = '#b9bbbd'
+    ctx.fillRect(win.x, win.y, win.w, win.h)
+    ctx.fillStyle = win.lit ? '#6b4f2c' : '#0d1013'
+    ctx.fillRect(win.x + 6, win.y + 6, win.w - 12, win.h - 12)
+    if (!win.lit) {
+      const g = ctx.createLinearGradient(win.x, win.y, win.x + win.w, win.y + win.h)
+      g.addColorStop(0, 'rgba(120, 140, 160, 0.18)')
+      g.addColorStop(0.5, 'rgba(120, 140, 160, 0)')
+      ctx.fillStyle = g
+      ctx.fillRect(win.x + 6, win.y + 6, win.w - 12, win.h - 12)
+    }
+    ctx.fillStyle = '#b9bbbd'
+    ctx.fillRect(win.x + win.w / 2 - 2, win.y, 4, win.h)
+  }
+
+  const map = canvasTexture(512, 372, (ctx, w, h) => {
+    ctx.fillStyle = colors[seed % colors.length]
+    ctx.fillRect(0, 0, w, h)
+    for (let y = 0; y < h; y += 11) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.2)'
+      ctx.fillRect(0, y, w, 2)
+    }
+    stains(ctx, w, h, 6, '30, 26, 22', 0.25)
+    wins.forEach((win) => drawWindow(ctx, win, false))
+    ctx.fillStyle = '#4a3527'
+    ctx.fillRect(door.x, door.y, door.w, door.h)
+    ctx.fillStyle = '#2a1f17'
+    ctx.fillRect(door.x + door.w - 16, door.y + 72, 6, 22)
+    ctx.fillStyle = lamp ? '#efe0b0' : '#6c6a63'
+    ctx.fillRect(door.x + door.w / 2 - 8, door.y - 26, 16, 16)
+    ctx.fillStyle = '#9da1a3'
+    ctx.fillRect(222, 300, 70, 52)
+    ctx.fillStyle = '#5d6164'
+    ctx.beginPath()
+    ctx.arc(250, 326, 18, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = '#8c8f90'
+    ctx.fillRect(w - 18, 0, 8, h)
+  })
+  const glow = canvasTexture(512, 372, (ctx, w, h) => {
+    ctx.fillStyle = '#000000'
+    ctx.fillRect(0, 0, w, h)
+    wins.forEach((win) => drawWindow(ctx, win, true))
+    if (lamp) {
+      ctx.fillStyle = '#d9c48c'
+      ctx.fillRect(door.x + door.w / 2 - 8, door.y - 26, 16, 16)
+    }
+  })
+  return { map, glow }
+}

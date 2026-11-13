@@ -3,10 +3,12 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import {
   asphaltTexture,
   binTexture,
+  blockTexture,
   ceilingTexture,
   clockFace,
   clothTexture,
   coinPanelTexture,
+  corrugatedTexture,
   concreteTexture,
   doorLeafTexture,
   exitTexture,
@@ -14,16 +16,18 @@ import {
   floorTexture,
   flooringTexture,
   frostedTexture,
+  houseFacade,
   hedgeTexture,
   labelTexture,
   mailboxTexture,
+  meshTexture,
   meterBoxTexture,
   nameSignTexture,
-  neighborTexture,
   noticePaper,
   paverTexture,
   plateAtlas,
   roofWarnTexture,
+  sidingTexture,
   signTexture,
   steelDoorTexture,
   stoneTileTexture,
@@ -245,6 +249,47 @@ const chain = (b, mat, from, to, sag) => {
   }
 }
 
+const Y_AXIS = new THREE.Vector3(0, 1, 0)
+
+/**
+ * 2点を結ぶ細い管を置く
+ */
+const tube = (b, mat, p0, p1, r = 0.012) => {
+  const d = new THREE.Vector3().subVectors(p1, p0)
+  const len = d.length()
+  Q.setFromUnitVectors(Y_AXIS, d.divideScalar(len))
+  const mid = new THREE.Vector3().addVectors(p0, p1).multiplyScalar(0.5)
+  b.add(new THREE.CylinderGeometry(r, r, len, 6), mat, M.compose(mid, Q, ONE))
+}
+
+/**
+ * 切妻の屋根を、2枚の板で置く。棟は x の向き
+ * @param y - 軒の高さ
+ * @param rise - 軒から棟までの高さ
+ */
+const gable = (b, mat, x0, x1, z0, z1, y, rise) => {
+  const half = (z1 - z0) / 2
+  const len = Math.hypot(half, rise) + 0.05
+  const a = Math.atan2(rise, half)
+  const roof = new THREE.BoxGeometry(x1 - x0, 0.1, len)
+  b.add(roof, mat, at((x0 + x1) / 2, y + rise / 2, z1 - half / 2, a))
+  b.add(roof, mat, at((x0 + x1) / 2, y + rise / 2, z0 + half / 2, -a))
+}
+
+/**
+ * 切妻の妻側の三角の壁
+ * @param dir - 外を向く向き。+x なら 1、-x なら -1
+ */
+const gableEnd = (b, mat, x, z0, z1, y, rise, dir) => {
+  const zm = (z0 + z1) / 2
+  const [za, zb] = dir > 0 ? [z1, z0] : [z0, z1]
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, za, 0, 0, zb, 0, rise, zm], 3))
+  g.setAttribute('normal', new THREE.Float32BufferAttribute([dir, 0, 0, dir, 0, 0, dir, 0, 0], 3))
+  g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0.5, 1], 2))
+  b.add(g, mat, at(x, y, 0))
+}
+
 /**
  * 繰り返し貼るテクスチャのマテリアル
  * @param tile - テクスチャ1枚の長さ (m)
@@ -318,7 +363,20 @@ export const buildBuilding = (scene) => {
       roughness: 0.4,
       metalness: 0.3,
     }),
-    neighbor: new THREE.MeshBasicMaterial({ map: neighborTexture(), color: 0x9a9a9a }),
+    block: tiled(blockTexture(), 0.8),
+    roofTile: new THREE.MeshStandardMaterial({ color: 0x33373c, roughness: 0.8 }),
+    roofSheet: tiled(corrugatedTexture(), 1.0, { roughness: 0.6, metalness: 0.3 }),
+    post: new THREE.MeshStandardMaterial({ color: 0x7f8481, roughness: 0.6, metalness: 0.4 }),
+    tire: new THREE.MeshStandardMaterial({ color: 0x161617, roughness: 0.9 }),
+    saddle: new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.5 }),
+    basket: new THREE.MeshStandardMaterial({
+      map: meshTexture(),
+      alphaTest: 0.5,
+      side: THREE.DoubleSide,
+      metalness: 0.5,
+      roughness: 0.4,
+    }),
+    tubeGlow: new THREE.MeshBasicMaterial({ color: 0xeef4ff }),
     glass: new THREE.MeshStandardMaterial({
       color: 0x7f8c98,
       roughness: 0.05,
@@ -349,6 +407,21 @@ export const buildBuilding = (scene) => {
     cabinet: new THREE.MeshStandardMaterial({ color: 0x6b5440, roughness: 0.6 }),
     slipper: new THREE.MeshStandardMaterial({ color: 0x7d6f69, roughness: 0.9 }),
   }
+  const sidings = ['#8a8274', '#6f7478', '#9a8b74', '#7a6f66'].map((c) =>
+    tiled(sidingTexture(c), 2.0),
+  )
+  const facades = [0, 1, 2, 3, 4, 5].map((seed) => {
+    const { map, glow } = houseFacade(seed)
+    return new THREE.MeshStandardMaterial({
+      map,
+      emissiveMap: glow,
+      emissive: 0xc8c8c8,
+      roughness: 0.85,
+    })
+  })
+  const frames = [0xb9bcc0, 0x2a2b2d, 0xd9d9d6, 0x8e2a24, 0x2c4f7c, 0x7f9c86].map(
+    (color) => new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.5 }),
+  )
   const plates = [1, 2, 3, 4].map(
     (f) => new THREE.MeshStandardMaterial({ map: plateAtlas(f), roughness: 0.5 }),
   )
@@ -562,19 +635,41 @@ export const buildBuilding = (scene) => {
       at(25, y, 3.08, 0, 0, Math.PI / 2),
     )
   })
-  // 向かい側のブロック塀と家
-  box(b, mat.concrete, -40, 90, -0.15, 1.3, 11.3, 11.45)
-  for (let x = -36; x < 88; x += 11 + Math.random() * 4) {
-    const w = 7 + Math.random() * 3
-    const h = 5.5 + Math.random() * 1.5
-    box(b, mat.dark, x, x + w, -0.15, h, 12.5, 20)
+  /**
+   * 2階建ての家を1軒建てる。切妻の屋根で、棟は x の向き
+   * @param face - 正面の向き。道路が南 (+z) なら 1、北 (-z) なら -1
+   */
+  const house = (x0, x1, z0, z1, seed, face) => {
+    const h = 5.6
+    const siding = sidings[seed % sidings.length]
+    box(b, siding, x0, x1, -0.15, h, z0, z1)
+    const front = face > 0 ? z1 + 0.01 : z0 - 0.01
     b.add(
-      new THREE.PlaneGeometry(w * 0.7, h * 0.6),
-      mat.neighbor,
-      at(x + w / 2, h * 0.45, 12.49, 0, Math.PI),
+      new THREE.PlaneGeometry(x1 - x0, h),
+      facades[seed % facades.length],
+      at((x0 + x1) / 2, h / 2, front, 0, face > 0 ? 0 : Math.PI),
     )
-    box(b, mat.dark, x - 0.3, x + w + 0.3, h, h + 0.25, 12.2, 20.3)
+    gable(b, mat.roofTile, x0 - 0.35, x1 + 0.35, z0 - 0.45, z1 + 0.45, h, 1.7)
+    gableEnd(b, siding, x0, z0, z1, h, 1.6, -1)
+    gableEnd(b, siding, x1, z0, z1, h, 1.6, 1)
   }
+
+  // 向かい側のブロック塀と、2階建ての家の並び
+  box(b, mat.block, -40, 90, -0.15, 1.3, 11.3, 11.45)
+  let seed = 0
+  for (let x = -36; x < 88; x += 10.5 + Math.random() * 4) {
+    house(x, x + 7 + Math.random() * 2.5, 12.5, 19.5, seed, -1)
+    seed += 1
+  }
+
+  // 西隣の家。道路側にブロック塀と門、駐輪場との間にも塀
+  house(-16.2, -9.0, -9.5, -1.8, 5, 1)
+  box(b, mat.block, -16.6, -10.4, 0, 1.2, 0.75, 0.9)
+  box(b, mat.block, -9.4, -7.2, 0, 1.2, 0.75, 0.9)
+  box(b, mat.block, -7.35, -7.2, 0, 1.2, -9.5, 0.75)
+  ;[-10.55, -9.4].forEach((x) => box(b, mat.block, x, x + 0.15, 0, 1.4, 0.7, 0.95))
+  box(b, mat.post, -9.32, -9.27, 0, 1.0, 0.6, 0.65)
+  box(b, mat.dark, -9.45, -9.14, 1.0, 1.28, 0.5, 0.72)
   // 電柱と電線、街灯
   const poles = [-14, 16, 46, 76]
   poles.forEach((x) => {
@@ -635,6 +730,85 @@ export const buildBuilding = (scene) => {
     box(b, mat.binBody, x, x + 0.42, 0.08, 0.95, 0.5, 0.9)
     b.add(new THREE.PlaneGeometry(0.42, 0.84), label, at(x + 0.21, 0.515, 0.902))
   })
+
+  // 駐輪場。古いトタンの屋根と鉄の柱。中に自転車が並び、蛍光灯がときどきちらつく
+  const roofY = (z) => 2.45 - ((z + 3.7) / 4.3) * 0.25
+  box(b, mat.concrete, -6.95, -2.55, 0, 0.04, -3.75, 0.6)
+  ;[-6.85, -2.65].forEach((x) => {
+    ;[-3.65, -1.55, 0.5].forEach((z) =>
+      box(b, mat.post, x - 0.04, x + 0.04, 0, roofY(z), z - 0.04, z + 0.04),
+    )
+    tube(
+      b,
+      mat.post,
+      new THREE.Vector3(x, roofY(-3.75), -3.75),
+      new THREE.Vector3(x, roofY(0.6), 0.6),
+      0.035,
+    )
+  })
+  b.add(
+    new THREE.BoxGeometry(4.7, 0.02, 4.65),
+    mat.roofSheet,
+    at(-4.75, roofY(-1.55) + 0.05, -1.55, Math.atan2(0.25, 4.3)),
+  )
+  box(b, mat.roofSheet, -6.9, -2.6, 0.04, 1.7, -3.74, -3.71)
+  const shelterSign = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.36, 0.3),
+    new THREE.MeshStandardMaterial({
+      map: signTexture(['駐輪場', '登録シールのない', '自転車は撤去します', '管理組合'], 256, 214),
+      roughness: 0.8,
+    }),
+  )
+  shelterSign.position.set(-4.75, 1.3, -3.705)
+  root.add(shelterSign)
+  box(b, mat.white, -5.35, -4.15, 2.27, 2.31, -1.6, -1.52)
+  const tubeLight = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.025, 0.05), mat.tubeGlow.clone())
+  tubeLight.position.set(-4.75, 2.255, -1.56)
+  root.add(tubeLight)
+  fixture(-4.75, 2.0, -1.56, 0xe8f0ff, 2.5, 5, tubeLight).faulty = true
+
+  /**
+   * 自転車を1台置く。前のかごは北 (-z) を向く
+   */
+  const bicycle = (cx, cz, frame) => {
+    const y = 0.04
+    const P = (yy, z) => new THREE.Vector3(cx, y + yy, z)
+    ;[cz + 0.52, cz - 0.52].forEach((z) => {
+      b.add(
+        new THREE.TorusGeometry(0.31, 0.022, 6, 24),
+        mat.tire,
+        at(cx, y + 0.33, z, 0, Math.PI / 2),
+      )
+    })
+    const rear = P(0.33, cz + 0.52)
+    const front = P(0.33, cz - 0.52)
+    const crank = P(0.3, cz + 0.02)
+    const seat = P(0.86, cz + 0.22)
+    const head = P(0.88, cz - 0.38)
+    const low = P(0.42, cz - 0.15)
+    tube(b, frame, crank, seat, 0.017)
+    tube(b, frame, crank, low, 0.017)
+    tube(b, frame, low, head, 0.017)
+    tube(b, frame, crank, rear)
+    tube(b, frame, seat, rear, 0.011)
+    tube(b, mat.stainless, head, front)
+    tube(b, mat.stainless, head, P(1.02, cz - 0.42))
+    b.add(
+      new THREE.CylinderGeometry(0.012, 0.012, 0.56, 6),
+      mat.stainless,
+      at(cx, y + 1.02, cz - 0.42, 0, 0, Math.PI / 2),
+    )
+    box(b, mat.saddle, cx - 0.08, cx + 0.08, y + 0.88, y + 0.94, cz + 0.12, cz + 0.36)
+    box(b, mat.basket, cx - 0.17, cx + 0.17, y + 0.78, y + 1.0, cz - 0.84, cz - 0.52)
+    box(b, mat.stainless, cx - 0.07, cx + 0.07, y + 0.68, y + 0.7, cz + 0.4, cz + 0.76)
+  }
+  for (let k = 0; k < 7; k++) {
+    bicycle(
+      -6.4 + k * 0.6 + (Math.random() - 0.5) * 0.08,
+      -1.25 + (Math.random() - 0.5) * 0.3,
+      frames[k % frames.length],
+    )
+  }
 
   // ---------- 植え込みとアプローチ ----------
   ;[
