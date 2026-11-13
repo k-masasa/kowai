@@ -183,25 +183,39 @@ const box = (b, mat, x0, x1, y0, y1, z0, z1) => {
 }
 
 /**
- * 箱から、中の直方体の部分をくり抜いて置く。くり抜いた穴の内側の面は描かないので、中から見る壁は別に置く
- * @param outer - 箱の [x0, x1, y0, y1, z0, z1]
- * @param hole - くり抜く部分の [x0, x1, y0, y1, z0, z1]。x と y は箱の内側にあること
+ * 箱を、穴と重ならない箱いくつかに分ける。どれも [x0, x1, y0, y1, z0, z1] の形
  */
-const boxWithout = (b, mat, outer, hole) => {
+const splitBox = (outer, hole) => {
   const [x0, x1, y0, y1, z0, z1] = outer
-  const [hx0, hx1, hy0, hy1, hz0, hz1] = hole
-  const cz0 = Math.max(z0, hz0)
-  const cz1 = Math.min(z1, hz1)
-  if (cz0 >= cz1) {
-    box(b, mat, x0, x1, y0, y1, z0, z1)
-    return
-  }
-  box(b, mat, x0, hx0, y0, y1, z0, z1)
-  box(b, mat, hx1, x1, y0, y1, z0, z1)
-  box(b, mat, hx0, hx1, y0, hy0, z0, z1)
-  box(b, mat, hx0, hx1, hy1, y1, z0, z1)
-  if (z0 < cz0) box(b, mat, hx0, hx1, hy0, hy1, z0, cz0)
-  if (cz1 < z1) box(b, mat, hx0, hx1, hy0, hy1, cz1, z1)
+  const hx0 = Math.max(hole[0], x0)
+  const hx1 = Math.min(hole[1], x1)
+  const hy0 = Math.max(hole[2], y0)
+  const hy1 = Math.min(hole[3], y1)
+  const cz0 = Math.max(z0, hole[4])
+  const cz1 = Math.min(z1, hole[5])
+  if (hx0 >= hx1 || hy0 >= hy1 || cz0 >= cz1) return [outer]
+  const pieces = [
+    [x0, hx0, y0, y1, z0, z1],
+    [hx1, x1, y0, y1, z0, z1],
+    [hx0, hx1, y0, hy0, z0, z1],
+    [hx0, hx1, hy1, y1, z0, z1],
+    [hx0, hx1, hy0, hy1, z0, cz0],
+    [hx0, hx1, hy0, hy1, cz1, z1],
+  ]
+  return pieces.filter(([a, b2, c, d, e, f]) => b2 > a && d > c && f > e)
+}
+
+/**
+ * 箱から、穴の部分をくり抜いて置く。穴の内側の面は描かないので、中から見る壁は別に置く
+ * @param outer - 箱の [x0, x1, y0, y1, z0, z1]
+ * @param holes - くり抜く部分の並び。それぞれ [x0, x1, y0, y1, z0, z1]
+ */
+const boxWithout = (b, mat, outer, holes) => {
+  let pieces = [outer]
+  holes.forEach((hole) => {
+    pieces = pieces.flatMap((piece) => splitBox(piece, hole))
+  })
+  pieces.forEach((p) => box(b, mat, ...p))
 }
 
 /**
@@ -400,6 +414,7 @@ export const buildBuilding = (scene) => {
       roughness: 0.4,
     }),
     tubeGlow: new THREE.MeshBasicMaterial({ color: 0xeef4ff }),
+    liftWall: new THREE.MeshStandardMaterial({ color: 0x9da2a6, roughness: 0.35, metalness: 0.6 }),
     streak: new THREE.MeshStandardMaterial({
       map: streakTexture(),
       transparent: true,
@@ -867,9 +882,13 @@ export const buildBuilding = (scene) => {
   const top = FLOORS * FH
   // 建物の奥の詰まった部分。412号室の玄関と廊下のところだけ、くり抜いておく
   const homeY = floorY(FLOORS)
-  const hole = [ROOM.x0, ROOM.x1, homeY, homeY + 2.7, ROOM.z0, ROOM.z1]
-  boxWithout(b, mat.tile, [0, CX1 + 0.2, 0, top + 0.1, -9, BACK_Z - 0.2], hole)
-  boxWithout(b, mat.tile, [HX1, CX1 + 0.2, 0, top + 0.1, BACK_Z - 0.25, CZ - 0.2], hole)
+  // エレベーターの昇降路もくり抜く
+  const holes = [
+    [ROOM.x0, ROOM.x1, homeY, homeY + 2.7, ROOM.z0, ROOM.z1],
+    [4.45, 5.55, 0, top + 0.1, -6.3, BACK_Z],
+  ]
+  boxWithout(b, mat.tile, [0, CX1 + 0.2, 0, top + 0.1, -9, BACK_Z - 0.2], holes)
+  boxWithout(b, mat.tile, [HX1, CX1 + 0.2, 0, top + 0.1, BACK_Z - 0.25, CZ - 0.2], holes)
   box(b, mat.tile, -0.2, 0, 0, top + 2.8, -9, FRONT)
   box(b, mat.tile, CX1, CX1 + 0.2, 0, top + 0.7, CZ - 0.2, FRONT)
   box(b, mat.tile, 0, SX1, 0, top + 2.8, 0, FRONT)
@@ -891,6 +910,7 @@ export const buildBuilding = (scene) => {
 
   // ---------- 各階 ----------
   const hallLights = []
+  const lifts = []
   for (let f = 1; f <= FLOORS; f++) {
     const y = floorY(f)
     const ground = f === 1
@@ -937,10 +957,16 @@ export const buildBuilding = (scene) => {
     wallZ(b, mat.paint, BACK_Z, 5.5, HX1, y, y + CEIL, 1)
     wallZ(b, mat.paint, BACK_Z, 4.5, 5.5, y + 2.1, y + CEIL, 1)
     wallX(b, mat.paint, HX1, BACK_Z, CZ, y, y + CEIL, -1)
-    // エレベーター (点検中)
-    box(b, mat.stainless, 4.5, 5.0, y, y + 2.1, BACK_Z, BACK_Z + 0.02)
-    box(b, mat.stainless, 5.0, 5.5, y, y + 2.1, BACK_Z, BACK_Z + 0.02)
-    box(b, mat.dark, 4.995, 5.005, y, y + 2.1, BACK_Z, BACK_Z + 0.025)
+    // エレベーター (点検中)。扉は開け閉めできるように、壁の少し奥に別に置く
+    const liftDoors = [-1, 1].map((side) => {
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2.1, 0.02), mat.stainless)
+      panel.position.set(5.0 + side * 0.25, y + 1.05, BACK_Z - 0.03)
+      panel.userData.home = panel.position.x
+      panel.userData.side = side
+      root.add(panel)
+      return panel
+    })
+    lifts.push({ floor: f, doors: liftDoors })
     box(b, mat.stainless, 4.4, 5.6, y + 2.1, y + 2.2, BACK_Z, BACK_Z + 0.04)
     box(b, mat.stainless, 5.7, 5.82, y + 1.0, y + 1.2, BACK_Z, BACK_Z + 0.03)
     const out = new THREE.Mesh(
@@ -950,8 +976,9 @@ export const buildBuilding = (scene) => {
         roughness: 0.9,
       }),
     )
-    out.position.set(4.75, y + 1.45, BACK_Z + 0.025)
-    root.add(out)
+    // 貼り紙は左の扉に貼ってあり、扉と一緒に動く
+    out.position.set(0, 0.4, 0.012)
+    liftDoors[0].add(out)
     // 非常口の表示と消火器
     b.add(
       new THREE.PlaneGeometry(0.4, 0.15),
@@ -1162,6 +1189,28 @@ export const buildBuilding = (scene) => {
     lamp.on = false
   })
   rb.build(room)
+
+  // エレベーターのかご。扉が開く階へ動かして使う
+  const car = new THREE.Group()
+  car.visible = false
+  root.add(car)
+  const cb = makeBuilder()
+  wallZ(cb, mat.liftWall, -6.25, 4.45, 5.55, 0, 2.3, 1)
+  wallX(cb, mat.liftWall, 4.455, -6.25, BACK_Z, 0, 2.3, 1)
+  wallX(cb, mat.liftWall, 5.545, -6.25, BACK_Z, 0, 2.3, -1)
+  flat(cb, mat.dark, 0.003, 4.45, 5.55, -6.25, BACK_Z, 1)
+  flat(cb, mat.liftWall, 2.3, 4.45, 5.55, -6.25, BACK_Z, -1)
+  box(cb, mat.stainless, 4.46, 5.54, 0.85, 0.88, -6.24, -6.2)
+  cb.build(car)
+  const carGlow = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.6, 0.3),
+    new THREE.MeshBasicMaterial({ color: 0xdfe6ea }),
+  )
+  carGlow.rotation.x = Math.PI / 2
+  carGlow.position.set(5.0, 2.29, -5.5)
+  car.add(carGlow)
+  const carLamp = fixture(5.0, 2.0, -5.5, 0xdfe6ea, 2.2, 4, carGlow)
+  carLamp.on = false
 
   // ---------- 1階のエントランス ----------
   box(b, mat.alum, SX1, HX1, 2.2, 2.3, 0, FRONT)
@@ -1492,6 +1541,9 @@ export const buildBuilding = (scene) => {
     entrance,
     room,
     homeLamps,
+    lifts,
+    car,
+    carLamp,
     homeGlass: { mesh: glass, normal: frosted.lit, peek: frosted.peek },
     hallLights,
     clock,

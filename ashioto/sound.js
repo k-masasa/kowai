@@ -295,6 +295,25 @@ export const createSound = () => {
   }
 
   /**
+   * エレベーターが着いた「ポーン」と、扉が開く音
+   */
+  const ding = () => {
+    if (!ctx) return
+    const t = ctx.currentTime
+    const osc = ctx.createOscillator()
+    osc.type = 'sine'
+    osc.frequency.value = 1318
+    const gain = ctx.createGain()
+    gain.gain.setValueAtTime(0.0001, t)
+    gain.gain.exponentialRampToValueAtTime(0.16, t + 0.01)
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 1.6)
+    osc.connect(gain).connect(out)
+    osc.start(t)
+    osc.stop(t + 1.7)
+    burst(t + 1.2, { vol: 0.07, freq: 320, q: 0.7, len: 0.9, attack: 0.25 })
+  }
+
+  /**
    * 自販機の取り出し口に、缶が落ちる「ガコン」
    */
   const drop = () => {
@@ -362,6 +381,7 @@ export const createSound = () => {
     heartbeat,
     rattle,
     chime,
+    ding,
     drop,
     click,
     approach,

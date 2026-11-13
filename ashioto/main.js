@@ -139,6 +139,8 @@ const dayState = () => ({
   roofTime: 0,
   knocked: false,
   idleWarned: false,
+  lift: null,
+  liftDone: false,
   cine: 0,
   timeline: [],
   homeFrom: null,
@@ -407,6 +409,7 @@ const resetWorld = () => {
   person.group.visible = false
   S.walkerIn = 8 + Math.random() * 8
   building.homeGlass.mesh.material = building.homeGlass.normal
+  closeLift()
 }
 
 /**
@@ -612,6 +615,7 @@ const reachFourth = () => {
  * 最後の追いかけ。うしろの階段の扉が閉まり、廊下の入口に顔の無い人が立つ
  */
 const startChase = () => {
+  if (S.lift) endLift()
   S.final = true
   building.zones.find((z) => z.tag === 'D4').on = false
   S.slamFor = 0.35
@@ -1034,6 +1038,92 @@ const updateLampFigure = (dt) => {
 }
 
 /**
+ * エレベーターの扉を、開き具合 k (0 から 1) にする。lift が無ければ全部の階を閉める
+ */
+const setLiftDoors = (lift, k) => {
+  lift.doors.forEach((door) => {
+    door.position.x = door.userData.home + door.userData.side * 0.5 * k
+  })
+}
+
+/**
+ * どの階のエレベーターも閉めて、かごを隠す
+ */
+const closeLift = () => {
+  building.lifts.forEach((lift) => setLiftDoors(lift, 0))
+  building.car.visible = false
+  building.carLamp.on = false
+}
+
+/**
+ * エレベーターの出来事を終える
+ */
+const endLift = () => {
+  closeLift()
+  if (!S.final) figure.group.visible = false
+  S.lift = null
+}
+
+/**
+ * 点検中のはずのエレベーターが、いる階に着く。中で顔の無い人がこちらを向いて立っている
+ */
+const startLift = (floor) => {
+  const y = floorY(floor)
+  building.car.position.y = y
+  building.car.visible = true
+  building.carLamp.pos.y = y + 2.0
+  building.carLamp.on = true
+  figure.group.position.set(5.0, y, -5.65)
+  figure.randomPose(0)
+  figure.group.rotation.y = 0
+  figure.group.visible = true
+  S.lift = { lift: building.lifts.find((l) => l.floor === floor), t: 0 }
+  sound.ding()
+}
+
+/**
+ * エレベーターに引きずり込まれた
+ */
+const liftDeath = () => {
+  endLift()
+  die('エレベーターは、点検中です。', 0.6)
+  faceToFace()
+}
+
+/**
+ * ふつう以上で、2階から4階のホールに入った時に、たまにエレベーターが着く。
+ * 扉が開いている間に近づくと、引きずり込まれる
+ */
+const updateLift = (dt) => {
+  if (!S.level.events || S.final) return
+  if (!S.lift) {
+    const m = /^H([2-4])$/.exec(S.tag)
+    if (!m || S.liftDone || S.ahead) return
+    S.liftDone = true
+    if (Math.random() < 0.45) startLift(Number(m[1]))
+    return
+  }
+  const L = S.lift
+  L.t += dt
+  let k = 0
+  if (L.t > 1.2 && L.t < 2.2) {
+    k = L.t - 1.2
+  } else if (L.t >= 2.2 && L.t < 6.0) {
+    k = 1
+  } else if (L.t >= 6.0) {
+    k = Math.max(0, 7.0 - L.t)
+  }
+  setLiftDoors(L.lift, k)
+  figure.face(S.pos)
+  const close = Math.hypot(S.pos.x - 5.0, S.pos.z + 4.8) < 1.6
+  if (k > 0.6 && close && Math.abs(S.feet - floorY(L.lift.floor)) < 1) {
+    liftDeath()
+    return
+  }
+  if (L.t >= 7.0) endLift()
+}
+
+/**
  * 外とエントランスまわりの小さな出来事。自販機がひとりでに鳴る、屋上の扉が叩かれる
  */
 const updateOddities = (dt) => {
@@ -1428,6 +1518,7 @@ const updatePlay = (dt) => {
   updateWalker(dt)
   updateLampFigure(dt)
   updateOddities(dt)
+  updateLift(dt)
 }
 
 /**
@@ -1602,6 +1693,7 @@ if (import.meta.env.DEV) {
     person,
     walker: (force) => spawnWalker(force),
     lamp: () => showLampFigure(),
+    lift: (floor) => startLift(floor),
     tp: (x, floor, z, yaw = S.yaw) => {
       S.pos.set(x, 0, z)
       S.feet = floorY(floor)
