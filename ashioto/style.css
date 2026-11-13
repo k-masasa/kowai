@@ -35,6 +35,28 @@ canvas {
   color: #e0dbd0;
 }
 
+#levels {
+  display: flex;
+  gap: 2.5em;
+}
+
+#levels button {
+  padding: 0.4em 0.2em;
+  border: none;
+  border-bottom: 1px solid transparent;
+  background: none;
+  font: inherit;
+  font-size: 15px;
+  letter-spacing: 0.2em;
+  color: #8d877c;
+  cursor: pointer;
+}
+
+#levels button:hover {
+  border-bottom-color: #8d877c;
+  color: #e0dbd0;
+}
+
 #pause {
   background: rgba(0, 0, 0, 0.72);
 }

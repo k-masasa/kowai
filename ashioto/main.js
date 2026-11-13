@@ -12,7 +12,14 @@ import { createSound } from './sound.js'
 const EYE = 1.55
 const WALK = 1.45
 const STRIDE = 0.72
-const FLASH = 8
+// 難しさごとの、顔の無い人の強さ
+// start: 最初に離れている距離、walk: 見ていない間の速さ、rush: 停電の間の速さ
+// gap: 停電の間隔 (遠い時、近い時)、dark: 停電の長さ (最短、ばらつき)、flash: 懐中電灯の明るさ
+const LEVELS = {
+  easy: { start: 11.5, walk: 2.05, rush: 4.2, gap: [4.2, 1.5], dark: [0.18, 0.32], flash: 8 },
+  normal: { start: 10.5, walk: 2.3, rush: 4.4, gap: [4.0, 1.4], dark: [0.18, 0.3], flash: 7 },
+  hard: { start: 9.5, walk: 2.6, rush: 4.6, gap: [3.6, 1.3], dark: [0.2, 0.28], flash: 5.5 },
+}
 const STORE = 'kowai.ashioto'
 
 /**
@@ -34,6 +41,7 @@ const loadMemory = () => {
 const memory = loadMemory()
 const S = {
   mode: 'title',
+  level: LEVELS.easy,
   memory,
   // 前に遊んだことがあると、1段早く進む
   head: memory.visits > 0 ? 1 : 0,
@@ -97,7 +105,7 @@ scene.fog = new THREE.FogExp2(0x000000, 0.11)
 const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.05, 60)
 scene.add(camera)
 
-const flashlight = new THREE.SpotLight(0xfff1dc, FLASH, 22, Math.PI / 7, 0.5, 2)
+const flashlight = new THREE.SpotLight(0xfff1dc, LEVELS.easy.flash, 22, Math.PI / 7, 0.5, 2)
 flashlight.position.set(0.12, -0.12, 0.05)
 flashlight.target.position.set(0, -0.05, -1)
 flashlight.castShadow = true
@@ -245,11 +253,14 @@ const lockPointer = () => {
 
 /**
  * タイトルから遊び始める
+ * @param level - 'easy' / 'normal' / 'hard'
  * @param lock - マウスを画面にロックするか。ロックすると、マウスを動かすだけで見回せる
  */
-const begin = (lock = true) => {
+const begin = (level = 'easy', lock = true) => {
   if (S.mode !== 'title') return
   S.mode = 'play'
+  S.level = LEVELS[level] || LEVELS.easy
+  flashlight.intensity = S.level.flash
   S.locked = lock
   S.startedAt = new Date()
   S.memory.visits += 1
@@ -306,7 +317,7 @@ const applyAway = () => {
  */
 const setDark = (dark) => {
   S.dark = dark
-  flashlight.intensity = dark ? 0 : FLASH
+  flashlight.intensity = dark ? 0 : S.level.flash
 }
 
 /**
@@ -337,7 +348,7 @@ const hideAhead = () => {
 const startChase = () => {
   S.final = true
   world.setFinal()
-  figure.group.position.set(0, 0, S.pos.z + 11.5)
+  figure.group.position.set(0, 0, S.pos.z + S.level.start)
   figure.randomPose(0)
   figure.face(S.pos)
   figure.group.visible = true
@@ -567,9 +578,9 @@ const inView = () => {
  * 顔の無い人の、今の速さ。明かりが消えている間は速く、見られている間は止まる
  */
 const chaseSpeed = () => {
-  if (S.dark) return 4.2
+  if (S.dark) return S.level.rush
   if (inView()) return 0
-  return 2.05
+  return S.level.walk
 }
 
 /**
@@ -586,8 +597,8 @@ const flickers = (dt, near) => {
   }
   S.flickerIn -= dt
   if (S.flickerIn > 0) return
-  S.darkFor = 0.18 + Math.random() * 0.32
-  S.flickerIn = THREE.MathUtils.lerp(4.2, 1.5, near) + Math.random() * 1.6
+  S.darkFor = S.level.dark[0] + Math.random() * S.level.dark[1]
+  S.flickerIn = THREE.MathUtils.lerp(S.level.gap[0], S.level.gap[1], near) + Math.random() * 1.6
   setDark(true)
   sound.flicker()
 }
@@ -671,7 +682,7 @@ const runTimeline = () => {
  */
 const updateCaught = (dt) => {
   S.cine += dt
-  if (S.cine < 0.9) flashlight.intensity = Math.random() < 0.4 ? 0 : FLASH * 1.3
+  if (S.cine < 0.9) flashlight.intensity = Math.random() < 0.4 ? 0 : S.level.flash * 1.3
   runTimeline()
 }
 
@@ -779,7 +790,9 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight)
 })
 
-$('title').addEventListener('click', () => begin(true))
+document.querySelectorAll('#levels button').forEach((button) => {
+  button.addEventListener('click', () => begin(button.dataset.level))
+})
 $('pause').addEventListener('click', resume)
 $('ending').addEventListener('click', backToTitle)
 
@@ -792,7 +805,7 @@ if (import.meta.env.DEV) {
   window.__ashioto = {
     S,
     figure,
-    start: () => begin(false),
+    start: (level = 'easy') => begin(level, false),
     lap: (n) => {
       S.lap = n - 1
       S.pos.z = -SEG - 0.01
