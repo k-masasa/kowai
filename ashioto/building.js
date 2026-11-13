@@ -763,7 +763,9 @@ export const buildBuilding = (scene) => {
   b.add(new THREE.PlaneGeometry(0.62, 0.18), mat.flap, at(vx0 + 0.42, 0.24, vz + 0.025, -0.18))
   box(b, mat.vendBody, vx0 + 0.08, vx0 + 0.76, 0.1, 0.13, vz, vz + 0.06)
   box(b, mat.vendBody, vx0 + 0.08, vx0 + 0.76, 0.33, 0.36, vz, vz + 0.04)
-  fixture(vm, 1.3, 1.6, 0xeaf3ff, 5, 5, null).outdoor = true
+  const vendLamp = fixture(vm, 1.3, 1.6, 0xeaf3ff, 5, 5, null)
+  vendLamp.outdoor = true
+  vendLamp.vending = true
   ;[
     [-1.19, mat.binCan],
     [-0.72, mat.binPet],
@@ -1490,6 +1492,7 @@ export const buildBuilding = (scene) => {
     entrance,
     room,
     homeLamps,
+    homeGlass: { mesh: glass, normal: frosted.lit, peek: frosted.peek },
     hallLights,
     clock,
     notice,

@@ -134,6 +134,11 @@ const dayState = () => ({
   wrong: null,
   walker: null,
   walkerIn: 0,
+  lampFig: null,
+  dropped: false,
+  roofTime: 0,
+  knocked: false,
+  idleWarned: false,
   cine: 0,
   timeline: [],
   homeFrom: null,
@@ -401,6 +406,7 @@ const resetWorld = () => {
   figure.group.visible = false
   person.group.visible = false
   S.walkerIn = 8 + Math.random() * 8
+  building.homeGlass.mesh.material = building.homeGlass.normal
 }
 
 /**
@@ -414,6 +420,7 @@ const startDay = (n) => {
   S.mode = 'play'
   sound.setDrone(0.12)
   updateNotice()
+  if (S.level.events && Math.random() < 0.45 + 0.2 * (n - 1)) showLampFigure()
   const goal = n === 1 ? '4階の、412号室に帰る。' : '今日も、412号室に帰る。'
   setTimeout(() => whisper(goal, 4200), 1800)
   if (S.locked && document.pointerLockElement !== renderer.domElement) pause()
@@ -596,6 +603,9 @@ const reachFourth = () => {
   building.homeLamps.forEach((lamp) => {
     lamp.on = true
   })
+  if (S.level.days > 1 && S.day === S.level.days) {
+    building.homeGlass.mesh.material = building.homeGlass.peek
+  }
 }
 
 /**
@@ -824,6 +834,7 @@ const walkSounds = (dist) => {
   }
   S.walking = true
   S.idle = 0
+  S.idleWarned = false
   const prev = Math.floor(S.stride)
   S.stride += dist / (S.running ? RUN_STRIDE : STRIDE)
   if (Math.floor(S.stride) !== prev) footstep()
@@ -973,9 +984,75 @@ const updateChase = (dt) => {
 const updateIdle = (dt) => {
   if (S.final || level() < 1 || S.walking) return
   S.idle += dt
+  if (S.idleWarned && S.level.strict && S.idle > 6.5) {
+    idleDeath()
+    return
+  }
   if (S.idle < 22) return
-  S.idle = -40
+  S.idle = S.level.strict ? 0 : -40
+  S.idleWarned = true
   sound.approach()
+}
+
+/**
+ * 足音が近づいてきたのに、まだ立ち止まっていた。うしろから襲われる
+ */
+const idleDeath = () => {
+  S.yaw += Math.PI
+  S.pitch = 0.02
+  die('立ち止まっていると、追いつかれます。', 0.9)
+  faceToFace()
+}
+
+/**
+ * ふつう以上で、日の始めに、始めの場所のうしろの街灯の下に人を立たせる。
+ * 振り返ると、こちらを向いて立っている。一度見てから目を離すと消える
+ */
+const showLampFigure = () => {
+  figure.group.position.set(-14.0, -0.15, 4.4)
+  figure.randomPose(0)
+  figure.face(S.pos)
+  figure.group.visible = true
+  S.lampFig = { seen: 0 }
+}
+
+/**
+ * 街灯の下の人。見てから目を離すか、近づくか、建物に入ると、明かりのちらつきの間に消える
+ */
+const updateLampFigure = (dt) => {
+  if (!S.lampFig) return
+  const seen = inView()
+  if (seen) S.lampFig.seen += dt
+  figure.face(S.pos)
+  const near = flat(figure.group.position, S.pos) < 3.5
+  if (!(S.lampFig.seen > 0.6 && !seen) && !near && !S.inside) return
+  const lamp = building.fixtures.find((f) => f.outdoor && Math.abs(f.pos.x + 13.97) < 0.1)
+  if (lamp) lamp.stutter = 0.4
+  if (seen) sound.flicker()
+  figure.group.visible = false
+  S.lampFig = null
+}
+
+/**
+ * 外とエントランスまわりの小さな出来事。自販機がひとりでに鳴る、屋上の扉が叩かれる
+ */
+const updateOddities = (dt) => {
+  if (!S.level.events) return
+  const vend = building.fixtures.find((f) => f.vending)
+  if (!S.dropped && Math.hypot(S.pos.x - vend.pos.x, S.pos.z - 1.5) < 2.4) {
+    S.dropped = true
+    if (Math.random() < 0.5) {
+      sound.drop()
+      vend.stutter = 0.35
+    }
+  }
+  if (S.tag !== 'L5') return
+  S.roofTime += dt
+  if (S.knocked || S.roofTime < 2.5) return
+  S.knocked = true
+  sound.knock(3)
+  setTimeout(() => sound.rattle(KNOB_BEATS), 1500)
+  setTimeout(() => whisper('あけて。'), 2600)
 }
 
 /**
@@ -1031,7 +1108,14 @@ const updateKnob = (dt) => {
     knobPoint.set(d.x + 0.33, d.y + 1.0, d.z)
     if (!frustum.containsPoint(knobPoint)) return
     d.tried = true
-    if (S.knobIn > 0 || d.hinge.rotation.y !== 0 || Math.random() > ev.knob) return
+    if (S.knobIn > 0 || d.hinge.rotation.y !== 0) return
+    if (Math.random() > ev.knob) {
+      if (Math.random() < 0.06) {
+        sound.chime()
+        S.knobIn = KNOB_REST
+      }
+      return
+    }
     d.rattle = KNOB_LEN
     sound.rattle(KNOB_BEATS)
     S.knobIn = KNOB_REST
@@ -1342,6 +1426,8 @@ const updatePlay = (dt) => {
   updateKnob(dt)
   updatePeek(dt)
   updateWalker(dt)
+  updateLampFigure(dt)
+  updateOddities(dt)
 }
 
 /**
@@ -1515,6 +1601,7 @@ if (import.meta.env.DEV) {
     home: () => goHome(),
     person,
     walker: (force) => spawnWalker(force),
+    lamp: () => showLampFigure(),
     tp: (x, floor, z, yaw = S.yaw) => {
       S.pos.set(x, 0, z)
       S.feet = floorY(floor)

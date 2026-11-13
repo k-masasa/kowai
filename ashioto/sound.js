@@ -272,6 +272,41 @@ export const createSound = () => {
   }
 
   /**
+   * インターホンの「ピンポーン」
+   */
+  const chime = (vol = 0.2) => {
+    if (!ctx) return
+    const t = ctx.currentTime
+    ;[
+      [659, 0],
+      [523, 0.42],
+    ].forEach(([freq, at]) => {
+      const osc = ctx.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.value = freq
+      const gain = ctx.createGain()
+      gain.gain.setValueAtTime(0.0001, t + at)
+      gain.gain.exponentialRampToValueAtTime(vol, t + at + 0.01)
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + at + 1.2)
+      osc.connect(gain).connect(out)
+      osc.start(t + at)
+      osc.stop(t + at + 1.25)
+    })
+  }
+
+  /**
+   * 自販機の取り出し口に、缶が落ちる「ガコン」
+   */
+  const drop = () => {
+    if (!ctx) return
+    const t = ctx.currentTime
+    thump(t, 0.5, 110, 0.18)
+    burst(t, { vol: 0.25, freq: 900, q: 1.2, len: 0.12, attack: 0.002 })
+    thump(t + 0.16, 0.25, 160, 0.1)
+    burst(t + 0.16, { vol: 0.12, freq: 2200, q: 3, len: 0.05, attack: 0.002 })
+  }
+
+  /**
    * 懐中電灯のスイッチの、カチッという音
    */
   const click = () => {
@@ -326,6 +361,8 @@ export const createSound = () => {
     knock,
     heartbeat,
     rattle,
+    chime,
+    drop,
     click,
     approach,
     setHum,
