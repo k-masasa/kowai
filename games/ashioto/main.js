@@ -210,6 +210,22 @@ const showEnding = (lines) => {
 }
 
 /**
+ * エンディングの最後に「Enter でタイトルへ」を出す。マウスのロックもここで外す
+ */
+const showNext = () => {
+  document.exitPointerLock?.()
+  $('ending-next').classList.remove('hidden')
+}
+
+/**
+ * エンディングからタイトルに戻る。まだ戻れない間は何もしない
+ */
+const backToTitle = () => {
+  if ($('ending-next').classList.contains('hidden')) return
+  location.reload()
+}
+
+/**
  * 画面を黒くする
  * @param seconds - 黒くなるまでの時間。0 ならすぐ
  */
@@ -410,7 +426,7 @@ const goHome = () => {
     [3.2, () => showEnding(lines)],
     [5.4, () => sound.knock(3)],
     [7.2, () => showEnding([...lines, '', 'ドアの前で、足音が止まりました。'])],
-    [8.6, () => $('ending-next').classList.remove('hidden')],
+    [8.6, () => showNext()],
   ]
 }
 
@@ -435,7 +451,7 @@ const caught = () => {
   S.timeline = [
     [0.9, () => fadeOut(0)],
     [2.0, () => showEnding([time, 'あなたの歩き方を、おぼえました。'])],
-    [4.0, () => $('ending-next').classList.remove('hidden')],
+    [4.0, () => showNext()],
   ]
 }
 
@@ -723,7 +739,10 @@ const tick = (time) => {
   renderer.render(scene, camera)
 }
 
-addEventListener('keydown', (e) => keys.add(e.code))
+addEventListener('keydown', (e) => {
+  keys.add(e.code)
+  if (e.code === 'Enter' || e.code === 'Space') backToTitle()
+})
 addEventListener('keyup', (e) => keys.delete(e.code))
 addEventListener('blur', () => keys.clear())
 
@@ -762,10 +781,7 @@ addEventListener('resize', () => {
 
 $('title').addEventListener('click', () => begin(true))
 $('pause').addEventListener('click', resume)
-$('ending').addEventListener('click', () => {
-  if ($('ending-next').classList.contains('hidden')) return
-  location.reload()
-})
+$('ending').addEventListener('click', backToTitle)
 
 $('greeting').textContent = greetingText()
 updateNotice()
