@@ -14,6 +14,8 @@ const RUN = LAND - MID
 const STEPS = 8
 const DIVIDER = 0.06
 export const STAIR_DOOR_X = -0.55
+// 中間の踊り場の窓の高さ (踊り場の床から)
+const WINDOW_UP = 1.5
 
 /**
  * 階の名前。0階より下は地下にする
@@ -61,7 +63,7 @@ const box = (group, mat, w, h, d, x, y, z) => {
  * 階段室を1階分作る。足元が y = 0
  * @param makeDoor - 廊下と同じ作りのドアを作る関数
  */
-const buildFloor = (mats, makeDoor, plate) => {
+const buildFloor = (mats, makeDoor, plate, makeWindow) => {
   const group = new THREE.Group()
   const lane = SW - DIVIDER
   const laneX = (SW + DIVIDER) / 2
@@ -99,6 +101,10 @@ const buildFloor = (mats, makeDoor, plate) => {
   front.position.set(0, FH / 2, END)
   group.add(back, front)
 
+  const win = makeWindow(mats)
+  win.position.set(0, HALF + WINDOW_UP, END + 0.005)
+  group.add(win)
+
   const door = makeDoor(mats, plate)
   door.group.rotation.y = Math.PI
   door.group.position.set(STAIR_DOOR_X, 0, 0)
@@ -131,7 +137,7 @@ const buildFloor = (mats, makeDoor, plate) => {
 /**
  * 階段室を組み立てる。同じ1階分を縦に積んで、上にも下にも続いて見えるようにする
  */
-export const buildStairs = (scene, baseMats, makeDoor, plate) => {
+export const buildStairs = (scene, baseMats, makeDoor, plate, makeWindow) => {
   const stairMap = wallTexture()
   stairMap.repeat.set(2, 1)
   const mats = {
@@ -149,7 +155,7 @@ export const buildStairs = (scene, baseMats, makeDoor, plate) => {
   const root = new THREE.Group()
   scene.add(root)
   const floors = [-1, 0, 1, 2].map((k) => {
-    const floor = buildFloor(mats, makeDoor, plate)
+    const floor = buildFloor(mats, makeDoor, plate, makeWindow)
     floor.group.position.y = k * FH
     root.add(floor.group)
     return { ...floor, k }
@@ -199,5 +205,11 @@ export const buildStairs = (scene, baseMats, makeDoor, plate) => {
     pos.x = Math.sign(prevX || pos.x || 1) * (DIVIDER + r)
   }
 
-  return { group: root, floors, setFloors, heightAt, clamp }
+  /**
+   * 踊り場の窓の場所。積んだ階の数だけある
+   */
+  const windowSpots = () =>
+    floors.map((f) => new THREE.Vector3(0, f.k * FH + HALF + WINDOW_UP, END))
+
+  return { group: root, floors, setFloors, heightAt, clamp, windowSpots }
 }

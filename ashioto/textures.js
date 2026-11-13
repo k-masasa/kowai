@@ -240,3 +240,128 @@ export const noticePaper = () => {
 
   return { tex, draw }
 }
+
+/**
+ * 怖い顔を描く。黒くくぼんだ目と、耳まで裂けた口
+ * @param cx - 顔の中心の x
+ * @param cy - 顔の中心の y
+ * @param r - 顔の半分の幅 (px)
+ */
+const scaryFace = (ctx, cx, cy, r) => {
+  const bruise = ctx.createRadialGradient(cx, cy - 0.15 * r, 0.1 * r, cx, cy - 0.15 * r, 0.95 * r)
+  bruise.addColorStop(0, 'rgba(50, 35, 40, 0.5)')
+  bruise.addColorStop(1, 'rgba(50, 35, 40, 0)')
+  ctx.fillStyle = bruise
+  ctx.fillRect(cx - r, cy - r, r * 2, r * 2)
+  ;[
+    [-0.38, -0.18, 0.2, 0.3],
+    [0.4, -0.12, 0.19, 0.27],
+  ].forEach(([dx, dy, rx, ry]) => {
+    const x = cx + dx * r
+    const y = cy + dy * r
+    ctx.fillStyle = 'rgba(8, 4, 6, 0.85)'
+    for (let i = 0; i < 3; i++) {
+      const sx = x + (Math.random() - 0.5) * rx * r
+      ctx.fillRect(sx, y, 0.03 * r, (0.5 + Math.random() * 0.6) * r)
+    }
+    const socket = ctx.createRadialGradient(x, y, 0, x, y, rx * r * 1.5)
+    socket.addColorStop(0, 'rgba(0, 0, 0, 1)')
+    socket.addColorStop(0.7, 'rgba(0, 0, 0, 1)')
+    socket.addColorStop(1, 'rgba(0, 0, 0, 0)')
+    ctx.fillStyle = socket
+    ctx.beginPath()
+    ctx.ellipse(x, y, rx * r * 1.5, ry * r * 1.5, 0, 0, Math.PI * 2)
+    ctx.fill()
+  })
+  const my = cy + 0.4 * r
+  ctx.fillStyle = '#030102'
+  ctx.beginPath()
+  ctx.moveTo(cx - 1.0 * r, my - 0.42 * r)
+  ctx.quadraticCurveTo(cx, my + 0.15 * r, cx + 1.0 * r, my - 0.36 * r)
+  ctx.quadraticCurveTo(cx + 0.1 * r, my + 0.75 * r, cx - 1.0 * r, my - 0.42 * r)
+  ctx.fill()
+  ctx.fillStyle = '#cfc6b2'
+  for (let i = -5; i <= 5; i++) {
+    const t = (i + 6) / 12
+    const x = cx - 1.0 * r + t * 2.0 * r
+    const y =
+      (1 - t) * (1 - t) * (my - 0.42 * r) +
+      2 * (1 - t) * t * (my + 0.15 * r) +
+      t * t * (my - 0.36 * r)
+    const tw = (0.05 + Math.random() * 0.04) * r
+    ctx.beginPath()
+    ctx.moveTo(x - tw, y)
+    ctx.lineTo(x + tw, y)
+    ctx.lineTo(x + (Math.random() - 0.5) * tw, y + (0.1 + Math.random() * 0.1) * r)
+    ctx.fill()
+  }
+}
+
+/**
+ * 顔の無い人の頭に巻く、怖い顔のテクスチャ。球の正面 (u = 0.25) に顔を描く
+ */
+export const faceTexture = () =>
+  canvasTexture(512, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#a39b8f'
+    ctx.fillRect(0, 0, w, h)
+    speckle(ctx, w, h, 2500, ['#a69e92', '#bdb5a8', '#9c948a'], 1.5)
+    scaryFace(ctx, w * 0.25, h * 0.52, 58)
+  })
+
+/**
+ * 夜の窓ガラス。draw(peek) で、外から覗いている顔を出したり消したりする
+ */
+export const windowGlass = () => {
+  let ctx = null
+  const tex = canvasTexture(256, 288, (c) => {
+    ctx = c
+  })
+
+  /**
+   * 窓を描く。peek が true なら、ガラスに顔と手を押し付けている人を描く
+   */
+  const draw = (peek) => {
+    const w = 256
+    const h = 288
+    const sky = ctx.createLinearGradient(0, 0, 0, h)
+    sky.addColorStop(0, '#0b1018')
+    sky.addColorStop(1, '#04060a')
+    ctx.fillStyle = sky
+    ctx.fillRect(0, 0, w, h)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.05)'
+    ctx.fillRect(30, 0, 18, h)
+    ctx.fillRect(58, 0, 6, h)
+    if (peek) {
+      const skin = ctx.createRadialGradient(w / 2, 118, 6, w / 2, 126, 66)
+      skin.addColorStop(0, '#8e887e')
+      skin.addColorStop(1, '#2f2c28')
+      ctx.fillStyle = skin
+      ctx.beginPath()
+      ctx.ellipse(w / 2, 124, 56, 70, 0.06, 0, Math.PI * 2)
+      ctx.fill()
+      scaryFace(ctx, w / 2, 130, 50)
+      ctx.fillStyle = '#050506'
+      ctx.beginPath()
+      ctx.ellipse(w / 2 - 2, 86, 60, 42, 0.06, Math.PI, Math.PI * 2)
+      ctx.fill()
+      ;[52, 204].forEach((x) => {
+        const hand = ctx.createRadialGradient(x, 214, 2, x, 218, 34)
+        hand.addColorStop(0, '#77716a')
+        hand.addColorStop(1, '#1d1b19')
+        ctx.fillStyle = hand
+        ctx.beginPath()
+        ctx.ellipse(x, 218, 22, 32, 0, 0, Math.PI * 2)
+        ctx.fill()
+      })
+    }
+    ctx.strokeStyle = '#2a2824'
+    ctx.lineWidth = 5
+    ctx.beginPath()
+    ctx.moveTo(w / 2, 0)
+    ctx.lineTo(w / 2, h)
+    ctx.stroke()
+    tex.needsUpdate = true
+  }
+
+  return { tex, draw }
+}

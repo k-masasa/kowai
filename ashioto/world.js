@@ -8,6 +8,7 @@ import {
   noticePaper,
   plateTexture,
   wallTexture,
+  windowGlass,
 } from './textures.js'
 import { buildStairs } from './stairs.js'
 
@@ -129,8 +130,47 @@ const makeDoor = (mats, plate, { hole = true } = {}) => {
   tag.position.set(0.63, 1.58, 0.003)
   group.add(tag)
 
-  return { group, hinge }
+  return { group, hinge, lever, rattle: 0 }
 }
+
+/**
+ * 窓を1枚作る。正面は +z
+ * @param glass - 窓ガラスのテクスチャ (覗く顔もここに描く)
+ */
+const makeWindow = (mats, glass) => {
+  const group = new THREE.Group()
+  const pane = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.8, 0.9),
+    new THREE.MeshStandardMaterial({
+      map: glass,
+      emissive: 0xffffff,
+      emissiveMap: glass,
+      emissiveIntensity: 0.25,
+      roughness: 0.15,
+      metalness: 0.3,
+    }),
+  )
+  pane.position.z = 0.008
+  group.add(pane)
+  ;[
+    [0.9, 0.05, 0, 0.47],
+    [0.9, 0.05, 0, -0.47],
+    [0.05, 0.94, -0.425, 0],
+    [0.05, 0.94, 0.425, 0],
+  ].forEach(([w, h, x, y]) => {
+    const part = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.05), mats.frame)
+    part.position.set(x, y, 0.02)
+    group.add(part)
+  })
+  const sill = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.04, 0.12), mats.frame)
+  sill.position.set(0, -0.5, 0.05)
+  group.add(sill)
+  return group
+}
+
+// 廊下の窓。区間の奥の右の壁にある
+const WINDOW_Z = -21.3
+const WINDOW_Y = 1.55
 
 /**
  * 天井の蛍光灯を1本作る
@@ -253,7 +293,10 @@ const buildSegment = (mats, shared) => {
   ext.add(box, label)
   onWall(ext, 1, -22.4, 0.42)
 
-  group.add(clock, notice, ext)
+  const win = makeWindow(mats, shared.glass.tex)
+  onWall(win, 1, WINDOW_Z, WINDOW_Y, 0)
+
+  group.add(clock, notice, ext, win)
   return { group, doors, lamps, stairDoor }
 }
 
@@ -304,7 +347,9 @@ export const buildWorld = (scene) => {
   const plates = Object.fromEntries(
     [...DOORS.map((d) => d.num), '412', '階段', ''].map((n) => [n, plateTexture(n)]),
   )
-  const shared = { clock, notice, plates, extLabel: labelTexture('消火器') }
+  const glass = windowGlass()
+  glass.draw(false)
+  const shared = { clock, notice, glass, plates, extLabel: labelTexture('消火器') }
 
   const [behind, here, ahead] = [SEG, 0, -SEG].map((offset) => {
     const seg = buildSegment(mats, shared)
@@ -319,7 +364,7 @@ export const buildWorld = (scene) => {
   const end = buildEnd(mats, plates['412'])
   scene.add(end.group)
   const allLamps = [...behind.lamps, ...here.lamps, ...ahead.lamps]
-  const stairs = buildStairs(scene, mats, makeDoor, plates[''])
+  const stairs = buildStairs(scene, mats, makeDoor, plates[''], (m) => makeWindow(m, glass.tex))
   let final = false
 
   /**
@@ -386,11 +431,21 @@ export const buildWorld = (scene) => {
     )
 
   /**
+   * 廊下の窓の場所。後ろ / 今いる所 / 先の区間の3つ
+   */
+  const windowSpots = () =>
+    [SEG, 0, -SEG].map((offset) => new THREE.Vector3(W / 2, WINDOW_Y, WINDOW_Z + offset))
+
+  /**
    * 毎フレーム、蛍光灯の明るさを決める
    * @param dark - 明かりが全部消えている間か
    * @param onLampOff - 蛍光灯が消えきった時に呼ぶ
    */
   const update = (dt, dark, onLampOff) => {
+    here.doors.forEach((door) => {
+      door.rattle = Math.max(0, door.rattle - dt)
+      door.lever.rotation.z = door.rattle > 0 ? Math.sin(door.rattle * 45) * 0.35 : 0
+    })
     here.lamps.forEach((lamp) => setLamp(lamp, dark ? 0 : lampLevel(lamp, dt, onLampOff)))
     behind.lamps.forEach((lamp) => setLamp(lamp, lamp.target))
     ahead.lamps.forEach((lamp) => setLamp(lamp, lamp.target))
@@ -400,6 +455,8 @@ export const buildWorld = (scene) => {
     here,
     end,
     stairs,
+    glass,
+    windowSpots,
     clock,
     notice,
     setVisible,

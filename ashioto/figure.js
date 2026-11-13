@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { faceTexture } from './textures.js'
 
 /**
  * 黒いコートを着た、顔の無い人を作る。足元が原点で、正面は +z
@@ -45,7 +46,8 @@ export const createFigure = () => {
   const head = new THREE.Group()
   head.position.y = 1.56
   group.add(head)
-  const skin = part(new THREE.SphereGeometry(0.11, 32, 24), pale, head)
+  const faceMat = new THREE.MeshStandardMaterial({ map: faceTexture(), roughness: 0.85 })
+  const skin = part(new THREE.SphereGeometry(0.11, 48, 32), faceMat, head)
   skin.scale.set(0.9, 1.16, 0.96)
   skin.position.y = 0.08
   const hair = part(new THREE.SphereGeometry(0.117, 32, 24, 0, Math.PI * 2, 0, 1.3), dark, head)

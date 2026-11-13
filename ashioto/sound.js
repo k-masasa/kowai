@@ -258,6 +258,27 @@ export const createSound = () => {
   }
 
   /**
+   * ドアノブをガチャガチャ回す音
+   */
+  const rattle = () => {
+    if (!ctx) return
+    const t = ctx.currentTime
+    for (let i = 0; i < 9; i++) {
+      const at = t + i * 0.11 + Math.random() * 0.03
+      burst(at, { vol: 0.22, freq: 2600 + Math.random() * 800, q: 5, len: 0.035, attack: 0.002 })
+      thump(at, 0.12, 180, 0.05)
+    }
+  }
+
+  /**
+   * 懐中電灯のスイッチの、カチッという音
+   */
+  const click = () => {
+    if (!ctx) return
+    burst(ctx.currentTime, { vol: 0.18, freq: 3200, q: 3, len: 0.02, attack: 0.001 })
+  }
+
+  /**
    * 心臓の音を1回鳴らす
    */
   const heartbeat = (vol) => {
@@ -303,6 +324,8 @@ export const createSound = () => {
     slam,
     knock,
     heartbeat,
+    rattle,
+    click,
     approach,
     setHum,
     setDrone,

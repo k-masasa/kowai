@@ -17,6 +17,7 @@ const STRIDE = 0.72
 // start: 最初に離れている距離、walk: 見ていない間の速さ、rush: 停電の間の速さ
 // gap: 停電の間隔 (遠い時、近い時)、dark: 停電の長さ (最短、ばらつき)、flash: 懐中電灯の明るさ
 // strict: うしろへ戻り続けると死ぬか、repeat: 階段で同じ階が続く回数の上限
+// events: たまに起こる出来事の間隔 (最短、ばらつき)。懐中電灯が切れる / ドアノブが鳴る / 窓から覗く
 const LEVELS = {
   easy: {
     start: 11.5,
@@ -27,6 +28,7 @@ const LEVELS = {
     flash: 8,
     strict: false,
     repeat: 0,
+    events: null,
   },
   normal: {
     start: 10.5,
@@ -37,6 +39,7 @@ const LEVELS = {
     flash: 7,
     strict: true,
     repeat: 2,
+    events: { torch: [25, 20], knob: [10, 12], peek: [16, 12] },
   },
   hard: {
     start: 9.5,
@@ -47,6 +50,7 @@ const LEVELS = {
     flash: 5.5,
     strict: true,
     repeat: 3,
+    events: { torch: [15, 15], knob: [7, 8], peek: [10, 10] },
   },
 }
 const STORE = 'kowai.ashioto'
@@ -87,6 +91,13 @@ const S = {
   repeats: 0,
   feet: 0,
   slamIn: 0,
+  torchIn: 0,
+  torchWarn: 0,
+  torchOff: 0,
+  knobIn: 0,
+  peekIn: 0,
+  peekFor: 0,
+  peekSeen: 0,
   memory,
   // 前に遊んだことがあると、1段早く進む
   head: memory.visits > 0 ? 1 : 0,
@@ -324,6 +335,11 @@ const begin = (level = 'easy', lock = true) => {
   sound.setDrone(0.15)
   updateNotice()
   world.stairs.setFloors(S.floor, S.nextFloor, GOAL)
+  if (S.level.events) {
+    S.torchIn = nextIn(S.level.events.torch)
+    S.knobIn = nextIn(S.level.events.knob)
+    S.peekIn = nextIn(S.level.events.peek)
+  }
   if (lock) lockPointer()
   console.log('%cここも、見てるんですね。', 'color:#a33;font-size:13px')
 }
@@ -827,12 +843,19 @@ const projView = new THREE.Matrix4()
 const sphere = new THREE.Sphere(new THREE.Vector3(), 0.45)
 
 /**
- * 顔の無い人が、画面に写っているか
+ * 今のカメラに写る範囲を計算し直す
  */
-const inView = () => {
+const updateFrustum = () => {
   camera.updateMatrixWorld()
   projView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
   frustum.setFromProjectionMatrix(projView)
+}
+
+/**
+ * 顔の無い人が、画面に写っているか
+ */
+const inView = () => {
+  updateFrustum()
   sphere.center.copy(figure.group.position).setY(1.0)
   return frustum.intersectsSphere(sphere)
 }
@@ -918,6 +941,105 @@ const updateIdle = (dt) => {
 }
 
 /**
+ * 出来事の次の間隔を決める
+ * @param range - [最短, ばらつき] (秒)
+ */
+const nextIn = ([min, spread]) => min + Math.random() * spread
+
+/**
+ * 懐中電灯の明るさを決める。ふつう以上では、たまにちらついてから数秒切れる
+ */
+const updateTorch = (dt) => {
+  const ev = S.level.events
+  if (ev && S.torchWarn <= 0 && S.torchOff <= 0) {
+    S.torchIn -= dt
+    if (S.torchIn <= 0) S.torchWarn = 0.9
+  }
+  if (S.torchWarn > 0) {
+    S.torchWarn -= dt
+    if (S.torchWarn <= 0) {
+      S.torchOff = 2.5 + Math.random() * 2
+      sound.click()
+    }
+  } else if (S.torchOff > 0) {
+    S.torchOff -= dt
+    if (S.torchOff <= 0) {
+      S.torchIn = nextIn(ev.torch)
+      sound.click()
+    }
+  }
+  let power = S.level.flash
+  if (S.dark || S.torchOff > 0) {
+    power = 0
+  } else if (S.torchWarn > 0) {
+    power = Math.random() < 0.5 ? 0 : S.level.flash
+  }
+  flashlight.intensity = power
+}
+
+/**
+ * ふつう以上では、近くのドアのノブがたまにガチャガチャ回る
+ */
+const updateKnob = (dt) => {
+  const ev = S.level.events
+  if (!ev || S.zone !== 'hall') return
+  S.knobIn -= dt
+  if (S.knobIn > 0) return
+  const door = world.here.doors.find(
+    (d) => Math.abs(d.z - S.pos.z) < 3.5 && d.rattle <= 0 && d.hinge.rotation.y === 0,
+  )
+  if (!door) {
+    S.knobIn = 2
+    return
+  }
+  door.rattle = 1.1
+  sound.rattle()
+  S.knobIn = nextIn(ev.knob)
+}
+
+const eye = new THREE.Vector3()
+
+/**
+ * 今いる場所から見える窓の場所
+ */
+const windowSpots = () => (S.zone === 'stairs' ? world.stairs.windowSpots() : world.windowSpots())
+
+/**
+ * ふつう以上では、見ていない間に窓の外に人が立つ。見つかると少しして消える
+ */
+const updatePeek = (dt) => {
+  const ev = S.level.events
+  if (!ev) return
+  eye.set(S.pos.x, S.feet + EYE, S.pos.z)
+  updateFrustum()
+  const spots = windowSpots()
+  if (S.peekFor > 0) {
+    S.peekFor -= dt
+    if (spots.some((p) => frustum.containsPoint(p) && p.distanceTo(eye) < 14)) S.peekSeen += dt
+    const close = spots.some((p) => p.distanceTo(eye) < 2.4)
+    if (S.peekFor > 0 && S.peekSeen < 1.2 && !close) return
+    S.peekFor = 0
+    world.glass.draw(false)
+    sound.flicker()
+    S.peekIn = nextIn(ev.peek)
+    return
+  }
+  S.peekIn -= dt
+  if (S.peekIn > 0) return
+  const hidden = spots.some((p) => {
+    const d = p.distanceTo(eye)
+    return d > 3 && d < 12 && !frustum.containsPoint(p)
+  })
+  if (!hidden) {
+    S.peekIn = 1.5
+    return
+  }
+  world.glass.draw(true)
+  S.peekFor = 12
+  S.peekSeen = 0
+}
+
+/**
  * 遊んでいる間の1フレーム分
  */
 const updatePlay = (dt) => {
@@ -928,6 +1050,9 @@ const updatePlay = (dt) => {
   updateChase(dt)
   if (S.mode !== 'play') return
   updateIdle(dt)
+  updateTorch(dt)
+  updateKnob(dt)
+  updatePeek(dt)
 }
 
 /**
