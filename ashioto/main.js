@@ -20,12 +20,14 @@ const BACK_LIMIT = 6
 const CHASE_X = 24
 
 // 難しさごとの設定
+// days: 何日続けて帰れたら終わりか。途中でつかまったら、1日目からやり直し
 // start: 追いかけの最初の距離、walk: 見ていない間の速さ、rush: 停電の間の速さ
 // gap: 停電の間隔 (遠い時、近い時)、dark: 停電の長さ (最短、ばらつき)、flash: 懐中電灯の明るさ
 // strict: 階段を下り続けると死ぬか、repeat: 3階が続く回数
 // events: たまに起こる出来事。torch (懐中電灯が切れる) と peek (窓から覗く) は間隔 (最短、ばらつき) の秒数、
 // knob (ドアノブが鳴る) は、ドアの目の前まで来た時に鳴る確率
 const NORMAL = {
+  days: 3,
   start: 9.5,
   walk: 2.45,
   rush: 4.6,
@@ -38,6 +40,7 @@ const NORMAL = {
 }
 const LEVELS = {
   easy: {
+    days: 1,
     start: 11.5,
     walk: 2.0,
     rush: 4.2,
@@ -50,7 +53,7 @@ const LEVELS = {
   },
   normal: NORMAL,
   // むずかしいは、ふつうを詰めてから決める。それまではタイトルで選べない
-  hard: NORMAL,
+  hard: { ...NORMAL, days: 5 },
 }
 
 // ドアノブが鳴ったあと、次に鳴れるようになるまでの秒数
@@ -76,12 +79,11 @@ const loadMemory = () => {
 }
 
 const memory = loadMemory()
-const S = {
-  mode: 'title',
-  level: LEVELS.easy,
-  memory,
-  // 前に遊んだことがあると、1段早く怖くなる
-  head: memory.visits > 0 ? 1 : 0,
+
+/**
+ * 1日分の状態の、始めの値。日が変わるたびに、これで上書きする
+ */
+const dayState = () => ({
   pos: new THREE.Vector3(-8, 0, 2.0),
   feet: 0,
   yaw: -1.33,
@@ -92,7 +94,6 @@ const S = {
   bob: 0,
   walking: false,
   idle: 0,
-  locked: false,
   dark: false,
   startedAt: new Date(),
   clockFrozen: false,
@@ -111,11 +112,7 @@ const S = {
   beatIn: 0,
   moved: 0,
   back: 0,
-  hum: 0,
   slamFor: 0,
-  awayAt: 0,
-  awayPending: false,
-  whisperTimer: 0,
   torchIn: 0,
   torchWarn: 0,
   torchOff: 0,
@@ -128,6 +125,23 @@ const S = {
   timeline: [],
   homeFrom: null,
   homeYaw: 0,
+})
+
+const S = {
+  mode: 'title',
+  level: LEVELS.easy,
+  memory,
+  // 前に遊んだことがあると、1段早く怖くなる
+  head: memory.visits > 0 ? 1 : 0,
+  // 何日目か。firstNight は1日目の夜
+  day: 1,
+  firstNight: new Date(),
+  locked: false,
+  hum: 0,
+  awayAt: 0,
+  awayPending: false,
+  whisperTimer: 0,
+  ...dayState(),
 }
 
 /**
@@ -172,6 +186,8 @@ moon.position.set(-20, 40, 30)
 scene.add(moon)
 
 const building = buildBuilding(scene)
+// 照明の、始めの点き方。日が変わったら、これに戻す
+const lightsAtStart = building.fixtures.map((f) => ({ on: f.on, faulty: f.faulty }))
 const pool = createLightPool(scene, building.fixtures, 10)
 const figure = createFigure()
 figure.group.visible = false
@@ -181,9 +197,9 @@ const homeDoor = building.doors.find((d) => d.home)
 const eye = new THREE.Vector3()
 
 /**
- * 今の怖さの段階
+ * 今の怖さの段階。3階が繰り返すたび、日を重ねるたびに上がる
  */
-const level = () => S.loops + S.head
+const level = () => S.loops + S.head + (S.day - 1)
 
 /**
  * xz 平面での距離
@@ -200,6 +216,19 @@ const clockText = (date) => `${date.getHours()}:${String(date.getMinutes()).padS
  */
 const dateText = (date) =>
   `${date.getMonth() + 1}月${date.getDate()}日 (${'日月火水木金土'[date.getDay()]})`
+
+/**
+ * n 日目の夜の日付
+ */
+const dayDate = (n) => new Date(S.firstNight.getTime() + (n - 1) * 86400000)
+
+/**
+ * エンディングの最初の行。何日も続く時は、何日目かも出す
+ */
+const stamp = () => {
+  const time = clockText(new Date())
+  return S.level.days > 1 ? [`${S.day}日目`, time] : [time]
+}
 
 /**
  * 角度を、近い回り方で補間する
@@ -236,7 +265,7 @@ const noticeLines = (stage) => {
   return [
     'お知らせ',
     '',
-    `${dateText(S.startedAt)}の夜、`,
+    `${dateText(dayDate(S.day))}の夜、`,
     '共用部の照明を',
     '点検します。',
     '',
@@ -263,14 +292,14 @@ const updateNotice = () => {
 /**
  * 画面の下に、ささやきの文字を少しだけ出す
  */
-const whisper = (text) => {
+const whisper = (text, ms = 2600) => {
   const el = $('whisper')
   el.textContent = text
   el.style.opacity = 1
   clearTimeout(S.whisperTimer)
   S.whisperTimer = setTimeout(() => {
     el.style.opacity = 0
-  }, 2600)
+  }, ms)
 }
 
 /**
@@ -316,31 +345,94 @@ const lockPointer = () => {
 }
 
 /**
- * タイトルから遊び始める
+ * 黒くした画面を、だんだん戻す
+ */
+const fadeIn = (seconds) => {
+  const el = $('fade')
+  el.style.transition = `opacity ${seconds}s`
+  el.style.opacity = 0
+}
+
+/**
+ * 前の日に動かした物を、全部元に戻す
+ */
+const resetWorld = () => {
+  if (S.peekWin) S.peekWin.mesh.material = S.peekWin.normal
+  Object.assign(S, dayState())
+  S.repeatLeft = S.level.repeat
+  const ev = S.level.events
+  if (ev) {
+    S.torchIn = nextIn(ev.torch)
+    S.peekIn = nextIn(ev.peek)
+  }
+  building.zones.forEach((z) => {
+    z.on = true
+  })
+  building.fireDoors.forEach((d) => {
+    d.group.rotation.y = Math.PI
+  })
+  building.doors.forEach((d) => {
+    d.hinge.rotation.y = 0
+    d.lever.rotation.z = 0
+    d.rattle = 0
+    d.tried = false
+  })
+  building.room.visible = false
+  building.signs.forEach((sign) => sign.draw(sign.label))
+  building.fixtures.forEach((f, i) => {
+    Object.assign(f, lightsAtStart[i], { stutter: 0 })
+  })
+  figure.group.visible = false
+}
+
+/**
+ * n 日目を、マンションの前の道から始める。少ししたら、どこに帰るのかを出す
+ */
+const startDay = (n) => {
+  S.day = n
+  resetWorld()
+  $('ending').classList.add('hidden')
+  fadeIn(1.6)
+  S.mode = 'play'
+  sound.setDrone(0.12)
+  updateNotice()
+  const goal = n === 1 ? '4階の、412号室に帰る。' : '今日も、412号室に帰る。'
+  setTimeout(() => whisper(goal, 4200), 1800)
+  if (S.locked && document.pointerLockElement !== renderer.domElement) pause()
+}
+
+/**
+ * 黒い画面に「2日目」と日付を出して、少ししたらその日を始める
+ */
+const dayCard = (n) => {
+  S.mode = 'card'
+  S.cine = 0
+  fadeOut(0)
+  showEnding([`${n}日目`, dateText(dayDate(n))])
+  S.timeline = [[2.8, () => startDay(n)]]
+}
+
+/**
+ * タイトルから遊び始める。何日も続く時は、1日目の画面を先に出す
  * @param levelName - 'easy' / 'normal' / 'hard'
  * @param lock - マウスを画面にロックするか。ロックすると、マウスを動かすだけで見回せる
  */
 const begin = (levelName = 'easy', lock = true) => {
   if (S.mode !== 'title') return
-  S.mode = 'play'
   S.level = LEVELS[levelName] || LEVELS.easy
-  S.repeatLeft = S.level.repeat
-  flashlight.intensity = S.level.flash
   S.locked = lock
-  S.startedAt = new Date()
+  S.firstNight = new Date()
   S.memory.visits += 1
   saveMemory()
   $('title').classList.add('hidden')
   sound.start()
-  sound.setDrone(0.12)
-  updateNotice()
-  if (S.level.events) {
-    S.torchIn = nextIn(S.level.events.torch)
-    S.knobIn = 0
-    S.peekIn = nextIn(S.level.events.peek)
-  }
   if (lock) lockPointer()
   console.log('%cここも、見てるんですね。', 'color:#a33;font-size:13px')
+  if (S.level.days > 1) {
+    dayCard(1)
+    return
+  }
+  startDay(1)
 }
 
 /**
@@ -538,7 +630,8 @@ const onStop = () => {
 }
 
 /**
- * 412号室に入った。ドアを開けて中に入り、暗転のあとにノックを鳴らす
+ * 412号室に入った。ドアを開けて中に入る。最後の日なら、暗転のあとにノックを鳴らす。
+ * まだ続く時は、次の日を始める
  */
 const goHome = () => {
   S.mode = 'home'
@@ -550,15 +643,24 @@ const goHome = () => {
   setDark(false)
   sound.creak()
   sound.setDrone(0)
-  const time = clockText(new Date())
-  const lines = [time, '部屋に、帰ってきました。']
+  const lines = [...stamp(), '部屋に、帰ってきました。']
+  if (S.day < S.level.days) {
+    S.timeline = [
+      [1.3, () => fadeOut(0.8)],
+      [2.2, () => sound.slam(0.8)],
+      [3.6, () => showEnding(lines)],
+      [6.8, () => $('ending').classList.add('hidden')],
+      [7.8, () => dayCard(S.day + 1)],
+    ]
+    return
+  }
   S.timeline = [
-    [0.9, () => fadeOut(0.7)],
-    [1.8, () => sound.slam(0.8)],
-    [3.2, () => showEnding(lines)],
-    [5.4, () => sound.knock(3)],
-    [7.2, () => showEnding([...lines, '', 'ドアの前で、足音が止まりました。'])],
-    [8.6, () => showNext()],
+    [1.3, () => fadeOut(0.8)],
+    [2.2, () => sound.slam(0.8)],
+    [3.6, () => showEnding(lines)],
+    [5.8, () => sound.knock(3)],
+    [7.6, () => showEnding([...lines, '', 'ドアの前で、足音が止まりました。'])],
+    [9.0, () => showNext()],
   ]
 }
 
@@ -575,10 +677,10 @@ const die = (line, at) => {
   setDark(false)
   S.ahead = false
   sound.setDrone(0)
-  const time = clockText(new Date())
+  const head = stamp()
   S.timeline = [
     [at, () => fadeOut(0)],
-    [at + 1.1, () => showEnding([time, line])],
+    [at + 1.1, () => showEnding([...head, line])],
     [at + 3.1, () => showNext()],
   ]
 }
@@ -955,6 +1057,14 @@ const updateCaught = (dt) => {
 }
 
 /**
+ * 日にちの画面を出している間。時間が来たら、その日を始める
+ */
+const updateCard = (dt) => {
+  S.cine += dt
+  runTimeline()
+}
+
+/**
  * 412号室に入る演出。ドアを開けて、中へ進む
  */
 const updateHome = (dt) => {
@@ -1012,6 +1122,7 @@ const tick = (time) => {
   if (S.mode === 'play') updatePlay(dt)
   if (S.mode === 'caught') updateCaught(dt)
   if (S.mode === 'home') updateHome(dt)
+  if (S.mode === 'card') updateCard(dt)
   updateSlam(dt)
   updateRattle(dt)
   updateEntrance(dt)
@@ -1093,6 +1204,7 @@ if (import.meta.env.DEV) {
         }))
     },
     start: (levelName = 'easy') => begin(levelName, false),
+    home: () => goHome(),
     tp: (x, floor, z, yaw = S.yaw) => {
       S.pos.set(x, 0, z)
       S.feet = floorY(floor)
