@@ -1,8 +1,9 @@
 import * as THREE from 'three'
 import './style.css'
-import { FH, FLOORS, buildBuilding, floorY } from './building.js'
+import { FH, FLOORS, UNITS, buildBuilding, descentPath, doorX, floorY } from './building.js'
 import { createLightPool } from './lights.js'
 import { createFigure } from './figure.js'
+import { createPerson } from './people.js'
 import { createSound } from './sound.js'
 
 // あしおと
@@ -24,6 +25,8 @@ const CHASE_X = 24
 // 1階から3階の廊下で、ここを過ぎると奥から明かりが消え、ここを過ぎると襲われる (x)
 const WRONG_WARN = 8.2
 const WRONG_DEATH = 11.6
+// 階段ですれ違う人が、次に出てくるまでの秒数 (最短、ばらつき)
+const WALKER_GAP = [26, 22]
 
 // 難しさごとの設定
 // days: 何日続けて帰れたら終わりか。途中でつかまったら、1日目からやり直し
@@ -129,6 +132,8 @@ const dayState = () => ({
   peekSeen: 0,
   peekWin: null,
   wrong: null,
+  walker: null,
+  walkerIn: 0,
   cine: 0,
   timeline: [],
   homeFrom: null,
@@ -200,6 +205,9 @@ const pool = createLightPool(scene, building.fixtures, 10)
 const figure = createFigure()
 figure.group.visible = false
 scene.add(figure.group)
+const person = createPerson()
+person.group.visible = false
+scene.add(person.group)
 const sound = createSound()
 const homeDoor = building.doors.find((d) => d.home)
 const eye = new THREE.Vector3()
@@ -391,6 +399,8 @@ const resetWorld = () => {
     Object.assign(f, lightsAtStart[i], { stutter: 0 })
   })
   figure.group.visible = false
+  person.group.visible = false
+  S.walkerIn = 8 + Math.random() * 8
 }
 
 /**
@@ -563,6 +573,12 @@ const onStairs = () => {
   // 4階に着いた瞬間に、そっくりな3階へ移す
   S.feet -= FH
   if (S.ahead) figure.group.position.y -= FH
+  if (S.walker) {
+    S.walker.path.forEach((p) => {
+      p.y -= FH
+    })
+    person.group.position.y -= FH
+  }
   S.looping = false
   S.repeatLeft -= 1
   building.signs.find((s) => s.floor === 4).draw('4F')
@@ -1059,10 +1075,238 @@ const updatePeek = (dt) => {
 }
 
 /**
+ * いる階段の階の番号。踊り場ならその階、階段ならその階から上へ向かう途中。階段でなければ 0
+ */
+const stairFloor = () => {
+  const m = /^[LAMB](\d)$/.exec(S.tag)
+  return m ? Number(m[1]) : 0
+}
+
+/**
+ * from 階から階段を下りて、玄関から外へ出ていく道すじ
+ */
+const exitPath = (from) => {
+  const pts = []
+  for (let f = from - 1; f >= 1; f--) pts.push(...descentPath(f))
+  pts.push(
+    new THREE.Vector3(2.8, 0, -0.8),
+    new THREE.Vector3(3.9, 0, -1.3),
+    new THREE.Vector3(5.0, 0, -0.5),
+    new THREE.Vector3(5.0, 0, 1.9),
+    new THREE.Vector3(Math.random() < 0.5 ? -9 : 20, 0, 2.1),
+  )
+  return pts
+}
+
+/**
+ * 1階のホールから階段を上がり、f 階の廊下の部屋に入っていく道すじ
+ */
+const homePath = (f, unit) => {
+  const pts = [
+    new THREE.Vector3(4.6, 0, -0.9),
+    new THREE.Vector3(3.9, 0, -1.3),
+    new THREE.Vector3(2.8, 0, -0.8),
+  ]
+  for (let k = 1; k < f; k++) pts.push(...descentPath(k).reverse())
+  const y = floorY(f)
+  const x = doorX(unit)
+  pts.push(
+    new THREE.Vector3(2.8, y, -0.8),
+    new THREE.Vector3(4.2, y, -0.9),
+    new THREE.Vector3(6.8, y, -0.7),
+    new THREE.Vector3(x, y, -0.7),
+    new THREE.Vector3(x, y, -1.25),
+  )
+  return pts
+}
+
+/**
+ * 階段に、人を1人出す。上から下りて外へ出ていく人と、下から上がって2階の部屋に帰る人がいる。
+ * 下りてくる人の一部は、おかしな人
+ * @param force - 確かめる時だけ使う。{ strange, up } で出し方を決める
+ */
+const spawnWalker = (force = {}) => {
+  const pf = Math.max(1, stairFloor())
+  const up = force.up ?? (pf >= 3 && Math.random() < 0.35)
+  const chance = Math.min(0.7, 0.25 + 0.12 * (S.day - 1) + 0.08 * S.loops)
+  const strange = !up && (force.strange ?? Math.random() < chance)
+  const unit = Math.floor(Math.random() * UNITS)
+  const path = up ? homePath(2, unit) : exitPath(Math.min(4, pf + (pf >= 2 ? 1 : 2)))
+  S.walker = {
+    path,
+    seg: 0,
+    along: 0,
+    strange,
+    up,
+    unit,
+    phase: 0,
+    lastStep: 0,
+    mode: 'walk',
+    stare: 0,
+    look: 0,
+    greeted: false,
+  }
+  person.dress(Math.floor(Math.random() * 6), strange)
+  person.group.position.copy(path[0])
+  person.group.visible = true
+}
+
+/**
+ * すれ違う人を消す
+ */
+const hideWalker = () => {
+  person.group.visible = false
+  S.walker = null
+}
+
+/**
+ * おかしな人が、明かりのちらつきの間に消える
+ */
+const vanishWalker = () => {
+  const p = person.group.position
+  building.fixtures.forEach((f) => {
+    if (f.stair && Math.abs(f.pos.y - p.y) < 3) f.stutter = 0.4
+  })
+  sound.flicker()
+  hideWalker()
+}
+
+/**
+ * 道の終わりまで歩いた。上がってきた人は、部屋のドアを開けて入る
+ */
+const finishWalker = () => {
+  const w = S.walker
+  hideWalker()
+  if (!w.up) return
+  const door = building.doors.find((d) => d.floor === 2 && d.num === 200 + w.unit + 1)
+  if (!door) return
+  door.hinge.rotation.y = -0.9
+  sound.creak()
+  setTimeout(() => {
+    door.hinge.rotation.y = 0
+    sound.slam(0.25)
+  }, 1400)
+}
+
+const headPoint = new THREE.Vector3()
+const toPoint = new THREE.Vector3()
+const viewDir = new THREE.Vector3()
+
+/**
+ * 目の前の、角度 limit (ラジアン) の内側に point が見えているか
+ */
+const lookingAt = (point, limit) => {
+  camera.getWorldDirection(viewDir)
+  toPoint.subVectors(point, eye).normalize()
+  return viewDir.dot(toPoint) > Math.cos(limit)
+}
+
+/**
+ * おかしな人と目が合った。目の前に顔を出す
+ */
+const strangeDeath = () => {
+  hideWalker()
+  die('目が、合いましたね。', 0.6)
+  faceToFace()
+}
+
+/**
+ * おかしな人が目の前で止まって、こちらを見ている間。見返すと襲われ、目をそらしていれば消える
+ */
+const stareWalker = (dt, d) => {
+  const w = S.walker
+  w.stare += dt
+  person.face(S.pos)
+  w.look = lookingAt(headPoint, 0.4) ? w.look + dt : Math.max(0, w.look - dt * 0.5)
+  if (w.look > 0.45) {
+    strangeDeath()
+    return
+  }
+  if ((w.stare > 2.6 && w.look < 0.2) || d > 3.4) vanishWalker()
+}
+
+/**
+ * 階段ですれ違う人の1フレーム分。ふつう以上で、階段にいる間だけ出てくる
+ */
+const updateWalker = (dt) => {
+  if (!S.level.events || S.final || !S.inside) return
+  const w = S.walker
+  if (!w) {
+    const pf = stairFloor()
+    if (!pf || pf >= 4) return
+    S.walkerIn -= dt
+    if (S.walkerIn > 0) return
+    S.walkerIn = nextIn(WALKER_GAP)
+    spawnWalker()
+    return
+  }
+  const g = person.group
+  headPoint.copy(g.position)
+  headPoint.y += 1.62
+  const d = headPoint.distanceTo(eye)
+  if (w.mode === 'stare') {
+    stareWalker(dt, d)
+    return
+  }
+  // 道すじに沿って歩く
+  const speed = w.strange ? 0.95 : 1.25
+  let left = speed * dt
+  while (left > 0 && w.seg < w.path.length - 1) {
+    const rest = w.path[w.seg].distanceTo(w.path[w.seg + 1]) - w.along
+    if (left < rest) {
+      w.along += left
+      left = 0
+    } else {
+      left -= rest
+      w.seg += 1
+      w.along = 0
+    }
+  }
+  if (w.seg >= w.path.length - 1) {
+    finishWalker()
+    return
+  }
+  const a = w.path[w.seg]
+  const b = w.path[w.seg + 1]
+  g.position.lerpVectors(a, b, w.along / a.distanceTo(b))
+  g.rotation.y = Math.atan2(b.x - a.x, b.z - a.z)
+  // ふつうの人は、こちらとぶつからないように端へ寄る
+  const dx = S.pos.x - g.position.x
+  const dz = S.pos.z - g.position.z
+  const near = Math.hypot(dx, dz)
+  if (!w.strange && near < 0.9 && Math.abs(g.position.y - S.feet) < 1.2) {
+    const len = Math.hypot(b.x - a.x, b.z - a.z) || 1
+    const px = (b.z - a.z) / len
+    const pz = -(b.x - a.x) / len
+    const side = dx * px + dz * pz > 0 ? -1 : 1
+    g.position.x += px * side * 0.35 * (1 - near / 0.9)
+    g.position.z += pz * side * 0.35 * (1 - near / 0.9)
+  }
+  w.phase += (speed * dt) / 0.7
+  person.walk(w.phase)
+  const dy = Math.abs(g.position.y - S.feet)
+  if (!w.strange && Math.floor(w.phase) !== w.lastStep) {
+    w.lastStep = Math.floor(w.phase)
+    const vol = THREE.MathUtils.clamp(1.4 / (1 + d), 0.03, 0.45)
+    sound.step(vol, { muffle: THREE.MathUtils.clamp((dy - 1) * 0.3, 0, 0.7) })
+  }
+  if (!w.strange && !w.greeted && d < 2.4 && dy < 1.2 && lookingAt(headPoint, 0.6)) {
+    w.greeted = true
+    whisper('こんばんは。')
+  }
+  if (w.strange && d < 1.9 && dy < 1.3) {
+    w.mode = 'stare'
+    sound.whisper()
+  }
+}
+
+/**
  * エントランスの自動ドアを開け閉めする。中に入った後は、もう開かない
  */
 const updateEntrance = (dt) => {
-  const near = !S.inside && Math.hypot(S.pos.x - 5.0, S.pos.z) < 2.2
+  const p = person.group.position
+  const leaving = S.walker && p.y < 0.5 && Math.hypot(p.x - 5.0, p.z) < 2.2
+  const near = (!S.inside && Math.hypot(S.pos.x - 5.0, S.pos.z) < 2.2) || leaving
   building.entrance.forEach((g) => {
     const target = g.userData.home + g.userData.side * (near ? 0.85 : 0)
     g.position.x += (target - g.position.x) * Math.min(1, dt * 4)
@@ -1097,6 +1341,7 @@ const updatePlay = (dt) => {
   updateTorch(dt)
   updateKnob(dt)
   updatePeek(dt)
+  updateWalker(dt)
 }
 
 /**
@@ -1268,6 +1513,8 @@ if (import.meta.env.DEV) {
     },
     start: (levelName = 'easy') => begin(levelName, false),
     home: () => goHome(),
+    person,
+    walker: (force) => spawnWalker(force),
     tp: (x, floor, z, yaw = S.yaw) => {
       S.pos.set(x, 0, z)
       S.feet = floorY(floor)

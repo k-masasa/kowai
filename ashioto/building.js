@@ -75,6 +75,26 @@ export const floorY = (f) => (f - 1) * FH
  */
 export const doorX = (i) => HX1 + UNIT * i + 0.75
 
+/**
+ * f + 1 階の踊り場から f 階の踊り場まで、階段を下りる道すじ。人を歩かせるのに使う
+ */
+export const descentPath = (f) => {
+  const y = floorY(f)
+  const wx = (SX0 + DIV0) / 2
+  const ex = (DIV1 + SX1) / 2
+  const mz = (BACK_Z + MID_Z) / 2
+  return [
+    new THREE.Vector3(wx, y + FH, -0.9),
+    new THREE.Vector3(wx, y + FH, LAND_Z),
+    new THREE.Vector3(wx, y + HALF, MID_Z),
+    new THREE.Vector3(wx, y + HALF, mz),
+    new THREE.Vector3(ex, y + HALF, mz),
+    new THREE.Vector3(ex, y + HALF, MID_Z),
+    new THREE.Vector3(ex, y, LAND_Z),
+    new THREE.Vector3(ex, y, -0.9),
+  ]
+}
+
 // 412号室の玄関と廊下が入る範囲。西の壁、玄関の東の壁、突き当たりの壁、玄関ドアのある壁
 const HOME_X = doorX(UNITS - 1)
 const ROOM = { x0: HOME_X - 0.5, x1: HOME_X + 1.0, z0: CZ - 5.2, z1: CZ - 0.2 }
