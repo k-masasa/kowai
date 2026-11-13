@@ -52,9 +52,14 @@ canvas {
   cursor: pointer;
 }
 
-#levels button:hover {
+#levels button:not(:disabled):hover {
   border-bottom-color: #8d877c;
   color: #e0dbd0;
+}
+
+#levels button:disabled {
+  color: #3a3732;
+  cursor: default;
 }
 
 #pause {

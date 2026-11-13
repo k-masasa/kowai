@@ -25,6 +25,17 @@ const CHASE_X = 24
 // strict: 階段を下り続けると死ぬか、repeat: 3階が続く回数
 // events: たまに起こる出来事。torch (懐中電灯が切れる) と peek (窓から覗く) は間隔 (最短、ばらつき) の秒数、
 // knob (ドアノブが鳴る) は、ドアの目の前まで来た時に鳴る確率
+const NORMAL = {
+  start: 9.5,
+  walk: 2.45,
+  rush: 4.6,
+  gap: [3.6, 1.3],
+  dark: [0.2, 0.28],
+  flash: 5.5,
+  strict: true,
+  repeat: 4,
+  events: { torch: [15, 15], knob: 0.1, peek: [10, 10] },
+}
 const LEVELS = {
   easy: {
     start: 11.5,
@@ -37,28 +48,9 @@ const LEVELS = {
     repeat: 0,
     events: null,
   },
-  normal: {
-    start: 10.5,
-    walk: 2.2,
-    rush: 4.4,
-    gap: [4.0, 1.4],
-    dark: [0.18, 0.3],
-    flash: 7,
-    strict: true,
-    repeat: 3,
-    events: { torch: [25, 20], knob: 0.1, peek: [16, 12] },
-  },
-  hard: {
-    start: 9.5,
-    walk: 2.45,
-    rush: 4.6,
-    gap: [3.6, 1.3],
-    dark: [0.2, 0.28],
-    flash: 5.5,
-    strict: true,
-    repeat: 4,
-    events: { torch: [15, 15], knob: 0.1, peek: [10, 10] },
-  },
+  normal: NORMAL,
+  // むずかしいは、ふつうを詰めてから決める。それまではタイトルで選べない
+  hard: NORMAL,
 }
 
 // ドアノブが鳴ったあと、次に鳴れるようになるまでの秒数
