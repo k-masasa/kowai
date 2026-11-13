@@ -258,16 +258,17 @@ export const createSound = () => {
   }
 
   /**
-   * ドアノブをガチャガチャ回す音
+   * ドアノブを押し下げる音。内側から、だれかが何度か開けようとする
+   * @param beats - 押し下げる時刻 (秒) の並び
    */
-  const rattle = () => {
+  const rattle = (beats) => {
     if (!ctx) return
     const t = ctx.currentTime
-    for (let i = 0; i < 9; i++) {
-      const at = t + i * 0.11 + Math.random() * 0.03
-      burst(at, { vol: 0.22, freq: 2600 + Math.random() * 800, q: 5, len: 0.035, attack: 0.002 })
-      thump(at, 0.12, 180, 0.05)
-    }
+    beats.forEach((b) => {
+      burst(t + b, { vol: 0.2, freq: 2400 + Math.random() * 700, q: 5, len: 0.035, attack: 0.002 })
+      burst(t + b + 0.09, { vol: 0.12, freq: 1900 + Math.random() * 500, q: 5, len: 0.03 })
+      thump(t + b, 0.14, 170, 0.05)
+    })
   }
 
   /**

@@ -23,7 +23,8 @@ const CHASE_X = 24
 // start: 追いかけの最初の距離、walk: 見ていない間の速さ、rush: 停電の間の速さ
 // gap: 停電の間隔 (遠い時、近い時)、dark: 停電の長さ (最短、ばらつき)、flash: 懐中電灯の明るさ
 // strict: 階段を下り続けると死ぬか、repeat: 3階が続く回数
-// events: たまに起こる出来事の間隔 (最短、ばらつき)。懐中電灯が切れる / ドアノブが鳴る / 窓から覗く
+// events: たまに起こる出来事。torch (懐中電灯が切れる) と peek (窓から覗く) は間隔 (最短、ばらつき) の秒数、
+// knob (ドアノブが鳴る) は、ドアの目の前まで来た時に鳴る確率
 const LEVELS = {
   easy: {
     start: 11.5,
@@ -45,7 +46,7 @@ const LEVELS = {
     flash: 7,
     strict: true,
     repeat: 3,
-    events: { torch: [25, 20], knob: [10, 12], peek: [16, 12] },
+    events: { torch: [25, 20], knob: 0.1, peek: [16, 12] },
   },
   hard: {
     start: 9.5,
@@ -56,9 +57,15 @@ const LEVELS = {
     flash: 5.5,
     strict: true,
     repeat: 4,
-    events: { torch: [15, 15], knob: [7, 8], peek: [10, 10] },
+    events: { torch: [15, 15], knob: 0.1, peek: [10, 10] },
   },
 }
+
+// ドアノブが鳴ったあと、次に鳴れるようになるまでの秒数
+const KNOB_REST = 40
+// ドアノブを押し下げる時刻 (秒)。1回試して、少し間を空けて何度か
+const KNOB_BEATS = [0, 0.5, 0.64, 0.78, 1.3, 1.44]
+const KNOB_LEN = 1.6
 
 /**
  * id で要素を取る
@@ -337,7 +344,7 @@ const begin = (levelName = 'easy', lock = true) => {
   updateNotice()
   if (S.level.events) {
     S.torchIn = nextIn(S.level.events.torch)
-    S.knobIn = nextIn(S.level.events.knob)
+    S.knobIn = 0
     S.peekIn = nextIn(S.level.events.peek)
   }
   if (lock) lockPointer()
@@ -835,30 +842,30 @@ const updateTorch = (dt) => {
 const knobPoint = new THREE.Vector3()
 
 /**
- * ふつう以上では、見えているドアのノブがたまにガチャガチャ回る
+ * ふつう以上では、目の前まで来たドアのノブが、たまにガチャガチャ回る。
+ * 1つのドアで試すのは、前に来るたびに1回だけ。鳴ったあとは、しばらく鳴らない
  */
 const updateKnob = (dt) => {
   const ev = S.level.events
   if (!ev) return
   S.knobIn -= dt
-  if (S.knobIn > 0) return
   updateFrustum()
-  const door = building.doors.find((d) => {
-    if (d.home || d.rattle > 0 || d.hinge.rotation.y !== 0 || Math.abs(d.y - S.feet) > 1) {
-      return false
+  building.doors.forEach((d) => {
+    const near =
+      !d.home && Math.abs(d.y - S.feet) < 1 && Math.abs(S.pos.x - d.x) < 0.7 && S.pos.z - d.z < 1.3
+    if (!near) {
+      d.tried = false
+      return
     }
-    const dist = flat(d, S.pos)
-    if (dist < 2.5 || dist > 9) return false
+    if (d.tried) return
     knobPoint.set(d.x + 0.33, d.y + 1.0, d.z)
-    return frustum.containsPoint(knobPoint)
+    if (!frustum.containsPoint(knobPoint)) return
+    d.tried = true
+    if (S.knobIn > 0 || d.hinge.rotation.y !== 0 || Math.random() > ev.knob) return
+    d.rattle = KNOB_LEN
+    sound.rattle(KNOB_BEATS)
+    S.knobIn = KNOB_REST
   })
-  if (!door) {
-    S.knobIn = 1.5
-    return
-  }
-  door.rattle = 1.2
-  sound.rattle()
-  S.knobIn = nextIn(ev.knob)
 }
 
 /**
@@ -909,13 +916,15 @@ const updateEntrance = (dt) => {
 }
 
 /**
- * ドアノブのガチャガチャの動き
+ * ドアノブのガチャガチャの動き。鳴る時刻に合わせて、レバーを押し下げる
  */
 const updateRattle = (dt) => {
   building.doors.forEach((d) => {
     if (d.rattle <= 0) return
     d.rattle = Math.max(0, d.rattle - dt)
-    d.lever.rotation.z = d.rattle > 0 ? Math.sin(d.rattle * 45) * 0.35 : 0
+    const t = KNOB_LEN - d.rattle
+    const beat = KNOB_BEATS.find((b) => t >= b && t < b + 0.12)
+    d.lever.rotation.z = beat === undefined ? 0 : Math.sin(((t - beat) / 0.12) * Math.PI) * 0.5
   })
 }
 
