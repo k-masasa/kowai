@@ -1,11 +1,12 @@
 import * as THREE from 'three'
 import './style.css'
-import { W, SEG, buildWorld } from './world.js'
+import { W, SEG, STAIR_Z, buildWorld } from './world.js'
+import { FH, MID, STAIR_DOOR_X } from './stairs.js'
 import { createFigure } from './figure.js'
 import { createSound } from './sound.js'
 
 // あしおと
-// 夜のマンションの内廊下を歩いて、207号室に帰る。廊下はループしていて、周回するたびに
+// 夜のマンションの階段を4階まで上がり、内廊下の奥の412号室に帰る。階段と廊下はループしていて、周回するたびに
 // 自分の足音が増え、明かりが消え、最後は「見ていない間だけ近づく」顔の無い人に追われる。
 // 時刻、遊んだ回数、タブを離れていた時間を使う。データはブラウザの外に出さない。
 
@@ -15,7 +16,7 @@ const STRIDE = 0.72
 // 難しさごとの、顔の無い人の強さ
 // start: 最初に離れている距離、walk: 見ていない間の速さ、rush: 停電の間の速さ
 // gap: 停電の間隔 (遠い時、近い時)、dark: 停電の長さ (最短、ばらつき)、flash: 懐中電灯の明るさ
-// strict: うしろへ戻り続けると死ぬか
+// strict: うしろへ戻り続けると死ぬか、repeat: 階段で同じ階が続く回数の上限
 const LEVELS = {
   easy: {
     start: 11.5,
@@ -25,6 +26,7 @@ const LEVELS = {
     dark: [0.18, 0.32],
     flash: 8,
     strict: false,
+    repeat: 0,
   },
   normal: {
     start: 10.5,
@@ -34,6 +36,7 @@ const LEVELS = {
     dark: [0.18, 0.3],
     flash: 7,
     strict: true,
+    repeat: 2,
   },
   hard: {
     start: 9.5,
@@ -43,11 +46,14 @@ const LEVELS = {
     dark: [0.2, 0.28],
     flash: 5.5,
     strict: true,
+    repeat: 3,
   },
 }
 const STORE = 'kowai.ashioto'
 // うしろへこれだけ戻ると死ぬ (m)
 const BACK_LIMIT = 6
+// 帰る階
+const GOAL = 4
 
 /**
  * id で要素を取る
@@ -74,11 +80,18 @@ const S = {
   doorSide: 0,
   pullFrom: null,
   rushDir: 0,
+  zone: 'stairs',
+  floor: 1,
+  nextFloor: 2,
+  decided: false,
+  repeats: 0,
+  feet: 0,
+  slamIn: 0,
   memory,
   // 前に遊んだことがあると、1段早く進む
   head: memory.visits > 0 ? 1 : 0,
   lap: 0,
-  pos: new THREE.Vector3(0, EYE, -2),
+  pos: new THREE.Vector3(0.6, EYE, -0.7),
   yaw: 0,
   pitch: 0,
   stride: 0,
@@ -197,9 +210,9 @@ const greetingText = () => {
  * 段階ごとの、貼り紙の文面
  */
 const noticeLines = (stage) => {
-  if (stage === 2) return ['207号室の方へ', '', '足音が、', 'ふたり分します。']
+  if (stage === 2) return ['412号室の方へ', '', '足音が、', 'ふたり分します。']
   if (stage === 1) {
-    return ['207号室の方へ', '', '夜中の足音が', 'ひびいています。', '静かに歩いて', 'ください。']
+    return ['412号室の方へ', '', '夜中の足音が', 'ひびいています。', '静かに歩いて', 'ください。']
   }
   return [
     'お知らせ',
@@ -276,6 +289,15 @@ const fadeOut = (seconds) => {
 }
 
 /**
+ * 黒くした画面を戻す
+ */
+const fadeIn = (seconds) => {
+  const el = $('fade')
+  el.style.transition = `opacity ${seconds}s`
+  el.style.opacity = 0
+}
+
+/**
  * マウスを画面にロックする。できなくても、ドラッグで見回せる
  */
 const lockPointer = () => {
@@ -301,6 +323,7 @@ const begin = (level = 'easy', lock = true) => {
   sound.start()
   sound.setDrone(0.15)
   updateNotice()
+  world.stairs.setFloors(S.floor, S.nextFloor, GOAL)
   if (lock) lockPointer()
   console.log('%cここも、見てるんですね。', 'color:#a33;font-size:13px')
 }
@@ -333,6 +356,7 @@ const applyAway = () => {
   if (level() < 1) return
   whisper('どこに行ってたの？')
   sound.whisper()
+  if (S.zone === 'stairs') return
   if (!S.final) {
     world.openDoorNear(S.pos.z)
     return
@@ -359,7 +383,7 @@ const showAhead = () => {
   S.ahead = true
   S.aheadDone = true
   S.clockFrozen = true
-  figure.group.position.set(0.28, 0, -18.3)
+  figure.group.position.set(0.28, 0, -21.6)
   figure.randomPose(0)
   figure.face(S.pos, true)
   figure.group.visible = true
@@ -449,7 +473,7 @@ const onStop = () => {
 }
 
 /**
- * 207号室に入った。ドアを開けて中に入り、暗転のあとにノックを鳴らす
+ * 412号室に入った。ドアを開けて中に入り、暗転のあとにノックを鳴らす
  */
 const goHome = () => {
   S.mode = 'home'
@@ -481,7 +505,7 @@ const caught = () => {
   const fig = figure.group.position
   S.yaw = Math.atan2(-(fig.x - S.pos.x), -(fig.z - S.pos.z))
   S.pitch = 0.04
-  fig.set(S.pos.x - Math.sin(S.yaw) * 0.42, 0, S.pos.z - Math.cos(S.yaw) * 0.42)
+  fig.set(S.pos.x - Math.sin(S.yaw) * 0.42, S.feet, S.pos.z - Math.cos(S.yaw) * 0.42)
   figure.face(S.pos)
   figure.scarePose()
   sound.scare()
@@ -551,9 +575,137 @@ const rushed = () => {
 }
 
 /**
+ * 階段を下りすぎた。振り向くと、目の前に立っている
+ */
+const downDeath = () => {
+  die('caught', '下には、もう戻れません。', 0.9)
+  figure.group.position.set(
+    S.pos.x - Math.sin(S.yaw) * 0.42,
+    S.feet,
+    S.pos.z - Math.cos(S.yaw) * 0.42,
+  )
+  figure.face(S.pos)
+  figure.scarePose()
+  figure.group.visible = true
+  sound.scare()
+}
+
+/**
+ * 階段で、下りた高さを数える。上ると減る
+ */
+const trackDown = (dy) => {
+  if (!S.level.strict) return
+  S.back = Math.max(0, S.back - dy * 1.45)
+  if (S.back > BACK_LIMIT) backDeath()
+}
+
+/**
+ * 上の階に着いた。同じ階が続くこともある
+ */
+const arriveUp = () => {
+  if (S.nextFloor === S.floor) {
+    S.repeats += 1
+    sound.whisper()
+  }
+  S.floor = S.nextFloor
+  S.nextFloor = S.floor + 1
+  S.decided = false
+  world.stairs.setFloors(S.floor, S.nextFloor, GOAL)
+}
+
+/**
+ * 下の階に着いた
+ */
+const arriveDown = () => {
+  S.floor -= 1
+  S.nextFloor = S.floor + 1
+  S.decided = false
+  world.stairs.setFloors(S.floor, S.nextFloor, GOAL)
+}
+
+/**
+ * 中間の踊り場まで来たら、上に見せる階を決める。難しさによっては、同じ階がまた続く
+ */
+const decideNext = () => {
+  S.decided = true
+  const canRepeat = S.floor >= 2 && S.floor < GOAL && S.repeats < S.level.repeat
+  if (!canRepeat || Math.random() > 0.55) return
+  S.nextFloor = S.floor
+  world.stairs.setFloors(S.floor, S.nextFloor, GOAL)
+}
+
+/**
+ * 4階のドアから廊下に出る。暗転している間に、廊下へ移す
+ */
+const enterHall = () => {
+  S.mode = 'shift'
+  S.cine = 0
+  keys.clear()
+  fadeOut(0.3)
+  S.timeline = [
+    [0.4, () => switchToHall()],
+    [0.55, () => fadeIn(0.6)],
+    [0.6, () => (S.mode = 'play')],
+  ]
+}
+
+/**
+ * 階段室を隠して、廊下の階段のドアの前に立たせる。うしろでドアが閉まる
+ */
+const switchToHall = () => {
+  S.zone = 'hall'
+  world.setVisible(true)
+  S.pos.set(-0.3, EYE, STAIR_Z - 0.7)
+  S.feet = 0
+  S.yaw = 0
+  S.pitch = 0
+  S.back = 0
+  S.lap = 0
+  world.here.stairDoor.hinge.rotation.y = -1.0
+  S.slamIn = 0.9
+}
+
+/**
+ * 廊下に出た少しあとで、うしろの階段のドアを閉める
+ */
+const updateSlam = (dt) => {
+  if (S.slamIn <= 0) return
+  S.slamIn -= dt
+  if (S.slamIn > 0) return
+  world.here.stairDoor.hinge.rotation.y = 0
+  sound.slam(0.7)
+}
+
+/**
+ * 階段室での動き。足元の高さを決めて、1階分上り下りしたら上下の階を入れ替える
+ * @param prevX - 動く前の x
+ */
+const moveOnStairs = (prevX) => {
+  world.stairs.clamp(S.pos, prevX)
+  const before = S.feet
+  S.feet = world.stairs.heightAt(S.pos.x, S.pos.z, S.feet)
+  trackDown(S.feet - before)
+  if (S.mode !== 'play') return
+  if (S.feet >= FH - 0.001) {
+    S.feet -= FH
+    arriveUp()
+  } else if (S.feet < -0.001) {
+    S.feet += FH
+    arriveDown()
+  }
+  if (!S.decided && S.pos.z < MID) decideNext()
+  const atDoor = Math.abs(S.pos.x - STAIR_DOOR_X) < 0.42 && S.pos.z > -0.4
+  if (S.floor === GOAL && S.feet < 0.05 && atDoor) enterHall()
+}
+
+/**
  * うしろへ戻りすぎた。死に方はランダムで選ぶ
  */
 const backDeath = () => {
+  if (S.zone === 'stairs') {
+    downDeath()
+    return
+  }
   if (Math.random() < 0.5) {
     pulledIn()
     return
@@ -565,7 +717,7 @@ const backDeath = () => {
  * うしろへ戻った距離を数える。前へ進むと減る
  */
 const trackBack = (dz) => {
-  if (!S.level.strict || S.final) return
+  if (!S.level.strict || S.final || S.zone !== 'hall') return
   S.back = Math.max(0, S.back + dz)
   if (S.back > BACK_LIMIT) backDeath()
 }
@@ -630,9 +782,14 @@ const move = (dt) => {
   velocity.set(0, 0, 0).addScaledVector(forward, f).addScaledVector(side, s)
   if (velocity.lengthSq() > 1) velocity.normalize()
   velocity.multiplyScalar(f < 0 ? WALK * 0.65 : WALK)
+  const prevX = S.pos.x
   S.pos.addScaledVector(velocity, dt)
-  S.pos.x = THREE.MathUtils.clamp(S.pos.x, -W / 2 + 0.28, W / 2 - 0.28)
   walkSounds(velocity.length() * dt)
+  if (S.zone === 'stairs') {
+    moveOnStairs(prevX)
+    return
+  }
+  S.pos.x = THREE.MathUtils.clamp(S.pos.x, -W / 2 + 0.28, W / 2 - 0.28)
   trackBack(velocity.z * dt)
   if (S.mode !== 'play') return
   bounds()
@@ -660,7 +817,7 @@ const updateAhead = (dt) => {
     return
   }
   if (flat(S.pos, figure.group.position) > 7.8) return
-  world.here.lamps[2].stutter = 0.45
+  world.here.lamps[3].stutter = 0.45
   sound.flicker()
   S.vanishIn = 0.12
 }
@@ -825,7 +982,7 @@ const updateRush = (dt) => {
 }
 
 /**
- * 207号室に入る演出。ドアを開けて、中へ進む
+ * 412号室に入る演出。ドアを開けて、中へ進む
  */
 const updateHome = (dt) => {
   S.cine += dt
@@ -854,7 +1011,7 @@ const updateClock = () => {
  * 近くの蛍光灯のうなりを、大きさが変わった時だけ伝える
  */
 const updateHum = () => {
-  const hum = S.dark || S.mode === 'title' ? 0 : world.humAt(S.pos.z)
+  const hum = S.dark || S.mode === 'title' || S.zone === 'stairs' ? 0 : world.humAt(S.pos.z)
   if (Math.abs(hum - S.hum) < 0.03) return
   S.hum = hum
   sound.setHum(hum)
@@ -866,7 +1023,7 @@ const updateHum = () => {
 const placeCamera = (dt) => {
   const target = S.walking ? -Math.abs(Math.sin((S.stride / STRIDE) * Math.PI)) * 0.028 : 0
   S.bob += (target - S.bob) * Math.min(1, dt * 12)
-  camera.position.set(S.pos.x, EYE + S.bob, S.pos.z)
+  camera.position.set(S.pos.x, S.feet + EYE + S.bob, S.pos.z)
   camera.rotation.set(S.pitch, S.yaw, 0, 'YXZ')
 }
 
@@ -881,6 +1038,11 @@ const tick = (time) => {
   if (S.mode === 'play') updatePlay(dt)
   if (S.mode === 'caught') updateCaught(dt)
   if (S.mode === 'home') updateHome(dt)
+  if (S.mode === 'shift') {
+    S.cine += dt
+    runTimeline()
+  }
+  if (S.mode === 'play') updateSlam(dt)
   if (S.mode === 'door') updateDoorDeath(dt)
   if (S.mode === 'rush') updateRush(dt)
   world.update(dt, S.dark, () => sound.clunk())
@@ -938,6 +1100,8 @@ $('ending').addEventListener('click', backToTitle)
 
 $('greeting').textContent = greetingText()
 updateNotice()
+world.setVisible(false)
+world.stairs.setFloors(S.floor, S.nextFloor, GOAL)
 renderer.setAnimationLoop(tick)
 
 // 開発中だけ、確かめるための入口を置く
@@ -945,8 +1109,11 @@ if (import.meta.env.DEV) {
   window.__ashioto = {
     S,
     figure,
+    world,
     start: (level = 'easy') => begin(level, false),
+    hall: () => switchToHall(),
     lap: (n) => {
+      if (S.zone === 'stairs') switchToHall()
       S.lap = n - 1
       S.pos.z = -SEG - 0.01
       bounds()

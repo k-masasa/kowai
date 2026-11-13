@@ -9,21 +9,29 @@ import {
   plateTexture,
   wallTexture,
 } from './textures.js'
+import { buildStairs } from './stairs.js'
 
 // 廊下の幅、天井の高さ、1区間の長さ (m)。z が 0 から -SEG までが1区間
 export const W = 1.9
 export const H = 2.45
-export const SEG = 20.4
+export const SEG = 23.4
 
 const DOORS = [
-  { num: '201', z: -1.9, side: -1 },
-  { num: '202', z: -5.0, side: 1 },
-  { num: '203', z: -8.1, side: -1 },
-  { num: '204', z: -11.2, side: 1 },
-  { num: '205', z: -14.3, side: -1 },
-  { num: '206', z: -17.4, side: 1 },
+  { num: '401', z: -2.4, side: 1 },
+  { num: '402', z: -4.2, side: -1 },
+  { num: '403', z: -5.9, side: 1 },
+  { num: '404', z: -7.7, side: -1 },
+  { num: '405', z: -9.4, side: 1 },
+  { num: '406', z: -11.2, side: -1 },
+  { num: '407', z: -12.9, side: 1 },
+  { num: '408', z: -14.7, side: -1 },
+  { num: '409', z: -16.4, side: 1 },
+  { num: '410', z: -18.2, side: -1 },
+  { num: '411', z: -19.9, side: 1 },
 ]
-const LAMP_Z = [-3.4, -10.2, -17.0]
+// 階段室へのドア。区間の始まりの左の壁にある
+export const STAIR_Z = -1.0
+const LAMP_Z = [-3.3, -9.2, -15.1, -21.0]
 const LAMP_POWER = 6
 const TUBE_GLOW = 1.6
 
@@ -206,6 +214,10 @@ const buildSegment = (mats, shared) => {
     return { ...door, z: d.z }
   })
 
+  const stairDoor = makeDoor(mats, shared.plates['階段'])
+  onWall(stairDoor.group, -1, STAIR_Z, 0)
+  group.add(stairDoor.group)
+
   const lamps = LAMP_Z.map((z) => {
     const lamp = makeLamp(mats, z)
     group.add(lamp.group)
@@ -221,13 +233,13 @@ const buildSegment = (mats, shared) => {
   )
   face.position.z = 0.024
   clock.add(rim, face)
-  onWall(clock, -1, -19.6, 2.0, 0.025)
+  onWall(clock, -1, -22.7, 2.0, 0.025)
 
   const notice = new THREE.Mesh(
     new THREE.PlaneGeometry(0.33, 0.44),
     new THREE.MeshStandardMaterial({ map: shared.notice.tex, roughness: 0.9 }),
   )
-  onWall(notice, -1, -18.55, 1.5, 0.004)
+  onWall(notice, -1, -21.75, 1.5, 0.004)
   notice.rotation.z = 0.025
 
   const ext = new THREE.Group()
@@ -239,14 +251,14 @@ const buildSegment = (mats, shared) => {
   )
   label.position.set(0, 0.12, 0.161)
   ext.add(box, label)
-  onWall(ext, 1, -19.4, 0.42)
+  onWall(ext, 1, -22.4, 0.42)
 
   group.add(clock, notice, ext)
-  return { group, doors, lamps }
+  return { group, doors, lamps, stairDoor }
 }
 
 /**
- * 廊下の突き当たりと、207号室のドアを作る。最後の周回でだけ出す
+ * 廊下の突き当たりと、412号室のドアを作る。最後の周回でだけ出す
  */
 const buildEnd = (mats, plate) => {
   const group = new THREE.Group()
@@ -290,7 +302,7 @@ export const buildWorld = (scene) => {
   const clock = clockFace()
   const notice = noticePaper()
   const plates = Object.fromEntries(
-    ['201', '202', '203', '204', '205', '206', '207'].map((n) => [n, plateTexture(n)]),
+    [...DOORS.map((d) => d.num), '412', '階段', ''].map((n) => [n, plateTexture(n)]),
   )
   const shared = { clock, notice, plates, extLabel: labelTexture('消火器') }
 
@@ -304,9 +316,22 @@ export const buildWorld = (scene) => {
     return seg
   })
   here.lamps[1].faulty = true
-  const end = buildEnd(mats, plates['207'])
+  const end = buildEnd(mats, plates['412'])
   scene.add(end.group)
   const allLamps = [...behind.lamps, ...here.lamps, ...ahead.lamps]
+  const stairs = buildStairs(scene, mats, makeDoor, plates[''])
+  let final = false
+
+  /**
+   * 廊下を出す / 隠す。階段室にいる間は隠しておく
+   */
+  const setVisible = (visible) => {
+    behind.group.visible = visible
+    here.group.visible = visible
+    ahead.group.visible = visible && !final
+    end.group.visible = visible && final
+    stairs.group.visible = !visible
+  }
 
   /**
    * 周回が変わった時に、蛍光灯を付け直す
@@ -331,9 +356,10 @@ export const buildWorld = (scene) => {
   }
 
   /**
-   * 最後の周回にする。先の区間を消して、突き当たりに207号室を出す
+   * 最後の周回にする。先の区間を消して、突き当たりに412号室を出す
    */
   const setFinal = () => {
+    final = true
     ahead.group.visible = false
     end.group.visible = true
   }
@@ -370,5 +396,18 @@ export const buildWorld = (scene) => {
     ahead.lamps.forEach((lamp) => setLamp(lamp, lamp.target))
   }
 
-  return { here, end, clock, notice, resetLamps, killLamp, setFinal, openDoorNear, humAt, update }
+  return {
+    here,
+    end,
+    stairs,
+    clock,
+    notice,
+    setVisible,
+    resetLamps,
+    killLamp,
+    setFinal,
+    openDoorNear,
+    humAt,
+    update,
+  }
 }
