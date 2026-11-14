@@ -1468,3 +1468,72 @@ export const gateTopTexture = () =>
     ctx.lineTo(w / 2 - 18, 330)
     ctx.fill()
   })
+
+/**
+ * 電車のドアの上の表示。黒い地に、次の駅の名前。draw(name, roman) で書き直す
+ */
+export const trainDisplay = () => {
+  let ctx = null
+  const tex = canvasTexture(512, 128, (c) => {
+    ctx = c
+  })
+
+  /**
+   * 次の駅を書く。name が空なら、何も出さない
+   */
+  const draw = (name, roman = '', head = '次は') => {
+    ctx.fillStyle = '#060708'
+    ctx.fillRect(0, 0, 512, 128)
+    if (name) {
+      ctx.textBaseline = 'middle'
+      ctx.textAlign = 'left'
+      ctx.font = `700 34px ${GOTHIC}`
+      ctx.fillStyle = '#ff9f2e'
+      ctx.fillText(head, 22, 64)
+      ctx.font = `700 60px ${GOTHIC}`
+      ctx.fillStyle = '#ffffff'
+      ctx.fillText(name, 130, 58)
+      ctx.font = `500 22px ${GOTHIC}`
+      ctx.fillStyle = '#9fd3ff'
+      ctx.fillText(roman, 134, 104)
+    }
+    tex.needsUpdate = true
+  }
+
+  return { tex, draw }
+}
+
+/**
+ * 電車の中づり広告。週刊誌や不動産のような、よくある広告
+ * @param kind - 0 から 3
+ */
+export const trainAdTexture = (kind) =>
+  canvasTexture(384, 256, (ctx, w, h) => {
+    const sets = [
+      ['#c8281e', '#ffffff', '週刊 夜明け', '終電後の街で', '見かけた「あの人」'],
+      ['#1f4f8f', '#ffffff', '月見台ガーデンズ', '駅徒歩7分', '新築分譲 好評販売中'],
+      ['#f4f1e8', '#222222', '夜間の駆け込み', 'ご注意ください', '鉄道会社'],
+      ['#2e6b4f', '#ffffff', '英会話スクール', '大人の学び直し', '無料体験受付中'],
+    ]
+    const [bg, fg, a, bb, c] = sets[kind % sets.length]
+    ctx.fillStyle = bg
+    ctx.fillRect(0, 0, w, h)
+    centerText(ctx, a, w / 2, 62, `800 40px ${GOTHIC}`, fg)
+    centerText(ctx, bb, w / 2, 136, `700 30px ${GOTHIC}`, fg)
+    centerText(ctx, c, w / 2, 196, `600 24px ${GOTHIC}`, fg)
+    stains(ctx, w, h, 2, '60, 50, 40', 0.1)
+  })
+
+/**
+ * 電車の座席のモケット。細かい織りの模様。1枚で 0.5m 四方
+ */
+export const moquetteTexture = (base) =>
+  canvasTexture(128, 128, (ctx, w, h) => {
+    ctx.fillStyle = base
+    ctx.fillRect(0, 0, w, h)
+    for (let y = 0; y < h; y += 4) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.12)'
+      ctx.fillRect(0, y, w, 1)
+    }
+    speckle(ctx, w, h, 900, ['rgba(255, 255, 255, 0.08)', 'rgba(0, 0, 0, 0.15)'], 1.5)
+  })

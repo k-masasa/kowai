@@ -20,6 +20,7 @@ export const createSound = () => {
   let noise = null
   let humGain = null
   let droneGain = null
+  let trainGain = null
 
   /**
    * 2秒分の白色雑音を作る
@@ -73,6 +74,26 @@ export const createSound = () => {
     lowpass.frequency.value = 160
     rumble.connect(lowpass).connect(droneGain)
     rumble.start()
+
+    // 電車の走る音。低いごうっという音と、モーターのうなり
+    trainGain = ctx.createGain()
+    trainGain.gain.value = 0
+    trainGain.connect(out)
+    const roar = ctx.createBufferSource()
+    roar.buffer = noise
+    roar.loop = true
+    const roarFilter = ctx.createBiquadFilter()
+    roarFilter.type = 'lowpass'
+    roarFilter.frequency.value = 420
+    roar.connect(roarFilter).connect(trainGain)
+    roar.start()
+    const motor = ctx.createOscillator()
+    motor.type = 'triangle'
+    motor.frequency.value = 180
+    const motorGain = ctx.createGain()
+    motorGain.gain.value = 0.25
+    motor.connect(motorGain).connect(trainGain)
+    motor.start()
   }
 
   /**
@@ -363,6 +384,54 @@ export const createSound = () => {
   /**
    * 低いうなりの大きさ (0 から 1)
    */
+  /**
+   * レールのつなぎ目を車輪が越える「ガタン、ゴトン」
+   */
+  const joint = (vol = 0.3) => {
+    if (!ctx) return
+    const t = ctx.currentTime
+    ;[0, 0.12].forEach((at, k) => {
+      thump(t + at, vol * (k ? 0.8 : 1), 70 - k * 6, 0.12)
+      burst(t + at, { vol: vol * 0.45, freq: 600 - k * 80, q: 1, len: 0.06, attack: 0.002 })
+    })
+  }
+
+  /**
+   * 踏切の鐘。カン、カン
+   */
+  const bell = (vol = 0.1) => {
+    if (!ctx) return
+    const t = ctx.currentTime
+    ;[0, 0.42].forEach((at) => {
+      const osc = ctx.createOscillator()
+      osc.type = 'square'
+      osc.frequency.value = 780
+      const gain = ctx.createGain()
+      gain.gain.setValueAtTime(0.0001, t + at)
+      gain.gain.exponentialRampToValueAtTime(vol, t + at + 0.005)
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.3)
+      osc.connect(gain).connect(out)
+      osc.start(t + at)
+      osc.stop(t + at + 0.32)
+    })
+  }
+
+  /**
+   * 電車の走る音の大きさ (0 から 1)
+   */
+  const setTrain = (level) => {
+    if (!ctx) return
+    trainGain.gain.setTargetAtTime(level * 0.07, ctx.currentTime, 0.3)
+  }
+
+  /**
+   * ドアが開け閉めする時の、空気の抜ける音
+   */
+  const doorHiss = () => {
+    if (!ctx) return
+    burst(ctx.currentTime, { vol: 0.12, freq: 2600, q: 0.6, len: 0.5, attack: 0.05 })
+  }
+
   const setDrone = (level) => {
     if (!ctx) return
     droneGain.gain.setTargetAtTime(level * 0.09, ctx.currentTime, 0.4)
@@ -387,5 +456,9 @@ export const createSound = () => {
     approach,
     setHum,
     setDrone,
+    joint,
+    bell,
+    setTrain,
+    doorHiss,
   }
 }

@@ -16,6 +16,7 @@ import { createFigure } from './figure.js'
 import { createPerson } from './people.js'
 import { createSound } from './sound.js'
 import { buildStation } from './station.js'
+import { DOORS, buildRideScenery, buildTrain } from './train.js'
 
 // あしおと
 // 夜、マンションの前の道から歩いて帰る。エレベーターは点検中なので、階段で20階まで上がり、
@@ -145,6 +146,7 @@ const dayState = () => ({
   peekSeen: 0,
   peekWin: null,
   wrong: null,
+  trip: null,
   odd: null,
   hinted: {},
   lookBack: 0,
@@ -252,6 +254,14 @@ const homeStation = buildStation(
   },
   building,
 )
+// 家に帰る電車。走っている間は、ほかの物から遠い RIDE に置いて、窓の外の景色を流す
+const train = buildTrain(scene, building)
+const RIDE = new THREE.Vector3(800, 0, -300)
+const ride = buildRideScenery(scene, RIDE)
+train.place(RIDE)
+// 走っている時の速さ (m/秒) と、ブレーキをかけてから止まるまでの長さ (m)
+const CRUISE = 22
+const BRAKE = 90
 // 照明の、始めの点き方。日が変わったら、これに戻す
 const lightsAtStart = building.fixtures.map((f) => ({ on: f.on, faulty: f.faulty }))
 const pool = createLightPool(scene, building.fixtures, 10)
@@ -461,12 +471,128 @@ const resetWorld = () => {
   person.group.visible = false
   S.walkerIn = 8 + Math.random() * 8
   building.homeGlass.mesh.material = building.homeGlass.normal
+  boardTrain()
   closeLift()
   crouch.group.visible = false
   if (S.level.events) {
     S.odd = planOddities()
     applyOddities()
     S.vendTrap = S.day >= 2 && Math.random() < 0.4
+  }
+}
+
+/**
+ * 家に帰る電車に乗って、月見台へ向かっているところから始める。ドアのそばに立ち、窓の外を見ている
+ */
+const boardTrain = () => {
+  train.root.visible = true
+  train.setOpen(0)
+  train.place(RIDE)
+  train.display.draw('月見台', 'Tsukimidai')
+  ride.group.visible = true
+  S.pos.set(RIDE.x + DOORS[2], 0, RIDE.z + 0.95)
+  S.yaw = Math.PI
+  S.tag = '@TD'
+  S.prevTag = '@TD'
+  S.trip = { phase: 'cruise', t: 0, speed: CRUISE, joint: 0, bell: 0, left: 0, sway: 0 }
+}
+
+/**
+ * 電車を to へ動かす。乗っていれば、一緒に動く
+ */
+const carryTrain = (to) => {
+  const dx = to.x - train.root.position.x
+  const dz = to.z - train.root.position.z
+  const onboard = S.tag.startsWith('@T')
+  train.place(to)
+  if (!onboard) return
+  S.pos.x += dx
+  S.pos.z += dz
+}
+
+const trainTo = new THREE.Vector3()
+
+/**
+ * 電車の1フレーム分。走る -> まもなく月見台 -> 止まってドアが開く -> 降りたら閉まって走り去る
+ */
+const updateTrip = (dt) => {
+  const T = S.trip
+  if (!T) return
+  T.t += dt
+  const stop = homeStation.stop
+  if (T.phase === 'cruise') {
+    ride.update(dt, T.speed)
+    if (T.t > 12 && !T.crossed) {
+      T.crossed = true
+      ride.cross(180)
+    }
+    if (ride.crossingNear()) {
+      T.bell -= dt
+      if (T.bell <= 0) {
+        T.bell = 0.84
+        sound.bell(0.07)
+      }
+    }
+    if (T.t > 24) {
+      T.phase = 'arrive'
+      T.t = 0
+      carryTrain(trainTo.set(stop.x - BRAKE, 0, stop.z))
+      ride.group.visible = false
+      train.display.draw('月見台', 'Tsukimidai', 'まもなく')
+      sound.chime(0.1)
+      whisper('まもなく、月見台です。', 3200)
+    }
+  } else if (T.phase === 'arrive') {
+    const k = Math.min(T.t / ((2 * BRAKE) / CRUISE), 1)
+    T.speed = CRUISE * (1 - k)
+    carryTrain(trainTo.set(stop.x - BRAKE + BRAKE * (1 - (1 - k) ** 2), 0, stop.z))
+    if (k >= 1) {
+      T.phase = 'open'
+      T.t = 0
+      sound.doorHiss()
+      train.display.draw('月見台', 'Tsukimidai', '')
+    }
+  } else if (T.phase === 'open') {
+    train.setOpen(Math.min(T.t / 1.2, 1))
+    if (T.t > 1.2 && !T.said) {
+      T.said = true
+      whisper('月見台、月見台です。', 3000)
+    }
+    if (S.tag.startsWith('@H')) T.left += dt
+    if (T.left > 3) {
+      T.phase = 'close'
+      T.t = 0
+      sound.doorHiss()
+    }
+  } else if (T.phase === 'close') {
+    train.setOpen(Math.max(0, 1 - T.t / 1.2))
+    if (T.t > 1.6) {
+      T.phase = 'leave'
+      T.t = 0
+    }
+  } else if (T.phase === 'leave') {
+    T.speed = 2.6 * T.t
+    const dist = 1.3 * T.t * T.t
+    carryTrain(trainTo.set(stop.x + dist, 0, stop.z))
+    if (dist > 170) {
+      T.phase = 'gone'
+      train.root.visible = false
+      train.fixtures.forEach((f) => {
+        f.on = false
+      })
+    }
+  }
+  // 走る音と、レールのつなぎ目の音。乗っている間は、少し揺れる
+  const moving = ['cruise', 'arrive', 'leave'].includes(T.phase)
+  const onboard = S.tag.startsWith('@T')
+  sound.setTrain(moving ? (onboard ? 1 : 0.6) * Math.min(1, T.speed / CRUISE + 0.15) : 0)
+  T.sway = moving && onboard ? Math.min(1, T.speed / CRUISE) : 0
+  if (moving && T.speed > 2) {
+    T.joint -= dt * T.speed
+    if (T.joint <= 0) {
+      T.joint = 25
+      sound.joint(onboard ? 0.22 : 0.1)
+    }
   }
 }
 
@@ -1392,6 +1518,8 @@ const updateTorch = (dt) => {
   } else if (S.torchWarn > 0) {
     power = Math.random() < 0.5 ? 0 : S.level.flash
   }
+  // 電車や駅のような明るい所では、懐中電灯は点けない
+  if (S.tag.startsWith('@')) power = 0
   flashlight.intensity = power
 }
 
@@ -1735,6 +1863,7 @@ const updateRattle = (dt) => {
  * 遊んでいる間の1フレーム分
  */
 const updatePlay = (dt) => {
+  updateTrip(dt)
   move(dt)
   if (S.mode !== 'play') return
   updateAhead(dt)
@@ -1833,8 +1962,11 @@ const placeCamera = (dt) => {
   const sway = S.running ? 0.04 : 0.026
   const target = S.walking ? -Math.abs(Math.sin(S.stride * Math.PI)) * sway : 0
   S.bob += (target - S.bob) * Math.min(1, dt * 12)
-  camera.position.set(S.pos.x, S.feet + EYE + S.bob, S.pos.z)
-  camera.rotation.set(S.pitch, S.yaw, 0, 'YXZ')
+  // 電車に乗って走っている間は、少し揺れる
+  const t = performance.now() / 1000
+  const rock = S.trip ? S.trip.sway : 0
+  camera.position.set(S.pos.x, S.feet + EYE + S.bob + Math.sin(t * 7.3) * 0.006 * rock, S.pos.z)
+  camera.rotation.set(S.pitch, S.yaw, Math.sin(t * 1.1) * 0.008 * rock, 'YXZ')
   eye.copy(camera.position)
 }
 
@@ -1942,6 +2074,7 @@ if (import.meta.env.DEV) {
     camera,
     crouch,
     homeStation,
+    train,
     tp: (x, floor, z, yaw = S.yaw) => {
       S.pos.set(x, 0, z)
       S.feet = floorY(floor)
