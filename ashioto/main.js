@@ -16,7 +16,8 @@ import { createFigure } from './figure.js'
 import { createPerson } from './people.js'
 import { createSound } from './sound.js'
 import { buildStation } from './station.js'
-import { DOORS, buildRideScenery, buildTrain } from './train.js'
+import { buildTown } from './town.js'
+import { buildRideScenery, buildTrain } from './train.js'
 
 // あしおと
 // 夜、マンションの前の道から歩いて帰る。エレベーターは点検中なので、階段で20階まで上がり、
@@ -48,7 +49,7 @@ const WALKER_GAP = [26, 22]
 // events: たまに起こる出来事。torch (懐中電灯が切れる) と peek (窓から覗く) は間隔 (最短、ばらつき) の秒数、
 // knob (ドアノブが鳴る) は、ドアの目の前まで来た時に鳴る確率
 const NORMAL = {
-  days: 2,
+  days: 1,
   start: 9.5,
   walk: 2.45,
   rush: 4.6,
@@ -178,6 +179,9 @@ const S = {
   // 何日目か。firstNight は1日目の夜
   day: 1,
   firstNight: new Date(),
+  // 月見台で電車を降りたら true。マンションで死んだら、マンションの前からやり直せる
+  checkpoint: false,
+  from: 'office',
   locked: false,
   hum: 0,
   awayAt: 0,
@@ -259,6 +263,33 @@ const train = buildTrain(scene, building)
 const RIDE = new THREE.Vector3(800, 0, -300)
 const ride = buildRideScenery(scene, RIDE)
 train.place(RIDE)
+// 会社のある町と、乗る駅 (中央町)。ほかの場所から遠く離して置く
+const town = buildTown(scene, [-1000, 0], building)
+const workStation = buildStation(
+  scene,
+  {
+    origin: town.stationOrigin,
+    name: '中央町',
+    kana: 'ちゅうおうちょう',
+    roman: 'Chuo-cho',
+    prev: ['みなと', '港'],
+    next: ['こうほく', '港北'],
+    color: '#2e8b57',
+    fares: [
+      ['港', '140'],
+      ['中央町', ''],
+      ['港北', '160'],
+      ['西原', '190'],
+      ['月見台', '220'],
+    ],
+    departures: [
+      ['普通', '月見台', '23:41'],
+      ['普通', '桜丘', '23:52'],
+    ],
+    tag: '@C',
+  },
+  building,
+)
 // 走っている時の速さ (m/秒) と、ブレーキをかけてから止まるまでの長さ (m)
 const CRUISE = 22
 const BRAKE = 90
@@ -400,6 +431,10 @@ const showEnding = (lines) => {
  */
 const showNext = () => {
   document.exitPointerLock?.()
+  const retry = S.mode === 'caught' && S.checkpoint
+  $('ending-next').textContent = retry
+    ? 'Enter キーで、マンションの前からやり直す'
+    : 'Enter キーでタイトルへ'
   $('ending-next').classList.remove('hidden')
 }
 
@@ -408,6 +443,11 @@ const showNext = () => {
  */
 const backToTitle = () => {
   if ($('ending-next').classList.contains('hidden')) return
+  if (S.mode === 'caught' && S.checkpoint) {
+    $('ending-next').classList.add('hidden')
+    startDay(S.day, 'home')
+    return
+  }
   location.reload()
 }
 
@@ -471,7 +511,7 @@ const resetWorld = () => {
   person.group.visible = false
   S.walkerIn = 8 + Math.random() * 8
   building.homeGlass.mesh.material = building.homeGlass.normal
-  boardTrain()
+  placeStart(S.from)
   closeLift()
   crouch.group.visible = false
   if (S.level.events) {
@@ -482,19 +522,31 @@ const resetWorld = () => {
 }
 
 /**
- * 家に帰る電車に乗って、月見台へ向かっているところから始める。ドアのそばに立ち、窓の外を見ている
+ * 1日の始めの場所に立たせる。from が 'home' なら、やり直しで、マンションの前から。
+ * そうでなければ、会社のロビーのエレベーターの前から
  */
-const boardTrain = () => {
-  train.root.visible = true
+const placeStart = (from) => {
   train.setOpen(0)
   train.place(RIDE)
-  train.display.draw('月見台', 'Tsukimidai')
-  ride.group.visible = true
-  S.pos.set(RIDE.x + DOORS[2], 0, RIDE.z + 0.95)
+  train.root.visible = false
+  ride.group.visible = false
+  train.fixtures.forEach((f) => {
+    f.on = false
+  })
+  if (from === 'home') {
+    S.pos.set(-8, 0, 2.0)
+    S.yaw = -1.33
+    S.tag = 'S'
+    S.prevTag = 'S'
+    S.trip = null
+    return
+  }
+  S.pos.copy(town.start)
   S.yaw = Math.PI
-  S.tag = '@TD'
-  S.prevTag = '@TD'
-  S.trip = { phase: 'cruise', t: 0, speed: CRUISE, joint: 0, bell: 0, left: 0, sway: 0 }
+  S.tag = '@OB'
+  S.prevTag = '@OB'
+  S.trip = { phase: 'wait', t: 0, speed: 0, joint: 0, bell: 0, left: 0, sway: 0, waited: 0 }
+  setTimeout(() => sound.ding(), 600)
 }
 
 /**
@@ -513,14 +565,80 @@ const carryTrain = (to) => {
 const trainTo = new THREE.Vector3()
 
 /**
- * 電車の1フレーム分。走る -> まもなく月見台 -> 止まってドアが開く -> 降りたら閉まって走り去る
+ * 電車の1フレーム分。中央町のホームで待つ -> 電車が来る -> 乗るとドアが閉まって発車 -> 走る ->
+ * まもなく月見台 -> 止まってドアが開く -> 降りたら閉まって走り去る
  */
 const updateTrip = (dt) => {
   const T = S.trip
   if (!T) return
   T.t += dt
   const stop = homeStation.stop
-  if (T.phase === 'cruise') {
+  const work = workStation.stop
+  if (T.phase === 'wait') {
+    if (S.tag === '@CP') T.waited += dt
+    if (T.waited > 9) {
+      T.phase = 'approach'
+      T.t = 0
+      T.speed = CRUISE
+      train.root.visible = true
+      train.fixtures.forEach((f) => {
+        f.on = true
+      })
+      train.display.draw('中央町', 'Chuo-cho', '')
+      carryTrain(trainTo.set(work.x - BRAKE - 110, 0, work.z))
+      sound.chime(0.1)
+      whisper('まもなく、1番線に、月見台方面の電車が参ります。', 3600)
+    }
+  } else if (T.phase === 'approach') {
+    carryTrain(trainTo.set(work.x - BRAKE - 110 + CRUISE * T.t, 0, work.z))
+    if (CRUISE * T.t >= 110) {
+      T.phase = 'brake'
+      T.t = 0
+    }
+  } else if (T.phase === 'brake') {
+    const k = Math.min(T.t / ((2 * BRAKE) / CRUISE), 1)
+    T.speed = CRUISE * (1 - k)
+    carryTrain(trainTo.set(work.x - BRAKE + BRAKE * (1 - (1 - k) ** 2), 0, work.z))
+    if (k >= 1) {
+      T.phase = 'board'
+      T.t = 0
+      T.left = 0
+      sound.doorHiss()
+    }
+  } else if (T.phase === 'board') {
+    train.setOpen(Math.min(T.t / 1.2, 1))
+    if (S.tag.startsWith('@T')) T.left += dt
+    if (T.left > 2.5) {
+      T.phase = 'shut'
+      T.t = 0
+      sound.doorHiss()
+      whisper('ドアが閉まります。', 2000)
+    }
+  } else if (T.phase === 'shut') {
+    train.setOpen(Math.max(0, 1 - T.t / 1.2))
+    if (T.t > 1.6) {
+      T.phase = 'depart'
+      T.t = 0
+      train.display.draw('月見台', 'Tsukimidai')
+    }
+  } else if (T.phase === 'depart') {
+    T.speed = Math.min(CRUISE, 2.6 * T.t)
+    carryTrain(trainTo.set(work.x + 1.3 * T.t * T.t, 0, work.z))
+    if (T.speed >= CRUISE) {
+      // 乗らずにホームに残った時は、電車だけ行ってしまい、次の電車を待つ
+      if (!S.tag.startsWith('@T')) {
+        Object.assign(T, { phase: 'wait', t: 0, waited: 0, speed: 0 })
+        train.root.visible = false
+        return
+      }
+      T.phase = 'cruise'
+      T.t = 0
+      carryTrain(trainTo.copy(RIDE))
+      ride.group.visible = true
+      sound.chime(0.1)
+      whisper('次は、月見台です。', 3200)
+    }
+  } else if (T.phase === 'cruise') {
     ride.update(dt, T.speed)
     if (T.t > 12 && !T.crossed) {
       T.crossed = true
@@ -558,7 +676,10 @@ const updateTrip = (dt) => {
       T.said = true
       whisper('月見台、月見台です。', 3000)
     }
-    if (S.tag.startsWith('@H')) T.left += dt
+    if (S.tag.startsWith('@H')) {
+      T.left += dt
+      S.checkpoint = true
+    }
     if (T.left > 3) {
       T.phase = 'close'
       T.t = 0
@@ -717,8 +838,9 @@ const updateStairOddities = (dt) => {
 /**
  * n 日目を、マンションの前の道から始める。少ししたら、どこに帰るのかを出す
  */
-const startDay = (n) => {
+const startDay = (n, from = 'office') => {
   S.day = n
+  S.from = from
   resetWorld()
   $('ending').classList.add('hidden')
   fadeIn(1.6)
@@ -1317,7 +1439,8 @@ const updateChase = (dt) => {
  * しばらく立ち止まっていると、うしろから足音が近づいてくる
  */
 const updateIdle = (dt) => {
-  if (S.final || level() < 1 || S.walking) return
+  // 電車を待つ間や乗っている間は立ち止まるので、マンションの中だけ
+  if (S.final || level() < 1 || S.walking || !S.inside) return
   S.idle += dt
   if (S.idleWarned && S.level.strict && S.idle > 6.5) {
     idleDeath()
@@ -1518,8 +1641,8 @@ const updateTorch = (dt) => {
   } else if (S.torchWarn > 0) {
     power = Math.random() < 0.5 ? 0 : S.level.flash
   }
-  // 電車や駅のような明るい所では、懐中電灯は点けない
-  if (S.tag.startsWith('@')) power = 0
+  // 電車、駅、会社のロビーのような明るい所では、懐中電灯は点けない (外の道では点ける)
+  if (/^@(T|O|[CH][EGTNP])/.test(S.tag)) power = 0
   flashlight.intensity = power
 }
 
@@ -1834,6 +1957,28 @@ const updateWalker = (dt) => {
 }
 
 /**
+ * 会社のロビーの自動ドアと、通りの信号。信号は青の間だけ、ピヨピヨ鳴る
+ */
+const updateTown = (dt) => {
+  const near = flat(S.pos, town.door) < 2.4
+  town.lobbyDoors.forEach((g) => {
+    const target = g.userData.home + g.userData.side * (near ? 1.05 : 0)
+    g.position.x += (target - g.position.x) * Math.min(1, dt * 4)
+  })
+  S.signalT = (S.signalT || 0) + dt
+  const go = S.signalT % 24 < 9
+  town.signals.forEach((face) => {
+    face.material = go ? town.walkGo : town.walkRed
+  })
+  if (!go || !S.tag.startsWith('@C')) return
+  S.chirpIn = (S.chirpIn || 0) - dt
+  if (S.chirpIn > 0) return
+  S.chirpIn = 0.55
+  const d = Math.abs(S.pos.x - (town.door.x + 38))
+  if (d < 25) sound.chirp(0.05 * (1 - d / 25))
+}
+
+/**
  * エントランスの自動ドアを開け閉めする。中に入った後は、もう開かない
  */
 const updateEntrance = (dt) => {
@@ -1864,6 +2009,7 @@ const updateRattle = (dt) => {
  */
 const updatePlay = (dt) => {
   updateTrip(dt)
+  updateTown(dt)
   move(dt)
   if (S.mode !== 'play') return
   updateAhead(dt)
@@ -2075,6 +2221,8 @@ if (import.meta.env.DEV) {
     crouch,
     homeStation,
     train,
+    town,
+    workStation,
     tp: (x, floor, z, yaw = S.yaw) => {
       S.pos.set(x, 0, z)
       S.feet = floorY(floor)

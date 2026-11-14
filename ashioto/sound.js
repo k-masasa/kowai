@@ -425,6 +425,26 @@ export const createSound = () => {
   }
 
   /**
+   * 歩行者用の信号の「ピヨ」
+   */
+  const chirp = (vol = 0.05) => {
+    if (!ctx) return
+    const t = ctx.currentTime
+    const osc = ctx.createOscillator()
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(2600, t)
+    osc.frequency.exponentialRampToValueAtTime(3400, t + 0.06)
+    osc.frequency.exponentialRampToValueAtTime(2500, t + 0.12)
+    const gain = ctx.createGain()
+    gain.gain.setValueAtTime(0.0001, t)
+    gain.gain.exponentialRampToValueAtTime(vol, t + 0.01)
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.14)
+    osc.connect(gain).connect(out)
+    osc.start(t)
+    osc.stop(t + 0.16)
+  }
+
+  /**
    * ドアが開け閉めする時の、空気の抜ける音
    */
   const doorHiss = () => {
@@ -460,5 +480,6 @@ export const createSound = () => {
     bell,
     setTrain,
     doorHiss,
+    chirp,
   }
 }

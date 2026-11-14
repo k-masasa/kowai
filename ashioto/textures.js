@@ -1537,3 +1537,129 @@ export const moquetteTexture = (base) =>
     }
     speckle(ctx, w, h, 900, ['rgba(255, 255, 255, 0.08)', 'rgba(0, 0, 0, 0.15)'], 1.5)
   })
+
+/**
+ * 店の看板。地の色と文字の色、店の名前
+ */
+export const shopSignTexture = (text, bg, fg, sub = '') =>
+  canvasTexture(768, 160, (ctx, w, h) => {
+    ctx.fillStyle = bg
+    ctx.fillRect(0, 0, w, h)
+    centerText(ctx, text, w / 2, sub ? 66 : 82, `800 74px ${GOTHIC}`, fg)
+    if (sub) centerText(ctx, sub, w / 2, 132, `600 28px ${GOTHIC}`, fg)
+    stains(ctx, w, h, 3, '40, 30, 20', 0.18)
+  })
+
+/**
+ * 店のシャッター。横に細い板が並ぶ。1枚で 1m 四方
+ */
+export const shutterTexture = () =>
+  canvasTexture(128, 128, (ctx, w, h) => {
+    for (let y = 0; y < h; y += 8) {
+      const g = ctx.createLinearGradient(0, y, 0, y + 8)
+      g.addColorStop(0, '#8d9092')
+      g.addColorStop(0.5, '#b4b7b8')
+      g.addColorStop(1, '#6f7273')
+      ctx.fillStyle = g
+      ctx.fillRect(0, y, w, 8)
+    }
+    stains(ctx, w, h, 3, '50, 40, 30', 0.25)
+  })
+
+/**
+ * コンビニの店の中。明るい棚に、色とりどりの品物。ガラス越しに見える
+ */
+export const storeInsideTexture = () =>
+  canvasTexture(768, 384, (ctx, w, h) => {
+    ctx.fillStyle = '#f4f6f6'
+    ctx.fillRect(0, 0, w, h)
+    ctx.fillStyle = '#e1e4e3'
+    ctx.fillRect(0, h * 0.78, w, h * 0.22)
+    const colors = ['#d8392b', '#2b6fb8', '#f2b705', '#3a9b52', '#e86f2b', '#7a4bb3', '#f5f5f0']
+    for (let shelf = 0; shelf < 4; shelf++) {
+      const y = 70 + shelf * 62
+      ctx.fillStyle = '#c9cdcc'
+      ctx.fillRect(40, y + 40, w - 80, 6)
+      for (let x = 44; x < w - 50; x += 14 + Math.random() * 10) {
+        ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)]
+        const hh = 18 + Math.random() * 20
+        ctx.fillRect(x, y + 40 - hh, 10 + Math.random() * 6, hh)
+      }
+    }
+    ctx.fillStyle = '#2b6fb8'
+    ctx.fillRect(0, 0, w, 26)
+  })
+
+/**
+ * 交番の看板。紺の地に、白い字
+ */
+export const kobanSignTexture = () =>
+  canvasTexture(512, 160, (ctx, w, h) => {
+    ctx.fillStyle = '#1b2f5c'
+    ctx.fillRect(0, 0, w, h)
+    centerText(ctx, '交番', w / 2, 62, `800 72px ${GOTHIC}`, '#ffffff')
+    centerText(ctx, 'KOBAN', w / 2, 128, `700 34px ${GOTHIC}`, '#dfe6f5')
+  })
+
+/**
+ * 会社のビルのテナント案内。階と会社の名前の一覧
+ */
+export const directoryTexture = () =>
+  canvasTexture(384, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#26282b'
+    ctx.fillRect(0, 0, w, h)
+    centerText(ctx, '中央町第一ビル', w / 2, 42, `700 30px ${GOTHIC}`, '#f1f1ee')
+    const rows = [
+      ['8F', '株式会社 東栄システム'],
+      ['7F', '北村税理士事務所'],
+      ['6F', 'アオイ企画'],
+      ['5F', '株式会社 東栄システム'],
+      ['4F', '空室'],
+      ['3F', 'みどり歯科'],
+      ['2F', '中央町英会話'],
+      ['1F', '管理室'],
+    ]
+    rows.forEach(([floor, name], i) => {
+      const y = 100 + i * 50
+      ctx.fillStyle = '#3b3e42'
+      ctx.fillRect(20, y - 20, w - 40, 40)
+      ctx.font = `700 22px ${GOTHIC}`
+      ctx.fillStyle = '#ffd36b'
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(floor, 34, y)
+      ctx.fillStyle = '#f1f1ee'
+      ctx.fillText(name, 92, y)
+    })
+  })
+
+/**
+ * 歩行者用の信号の顔。赤は立つ人、青は歩く人
+ */
+export const walkSignalTexture = (go) =>
+  canvasTexture(128, 128, (ctx, w, h) => {
+    ctx.fillStyle = '#111214'
+    ctx.fillRect(0, 0, w, h)
+    ctx.fillStyle = go ? '#2fd0a8' : '#ff3b2e'
+    const cx = w / 2
+    ctx.beginPath()
+    ctx.arc(cx, 28, 11, 0, Math.PI * 2)
+    ctx.fill()
+    if (go) {
+      ctx.fillRect(cx - 7, 42, 14, 34)
+      ctx.save()
+      ctx.translate(cx, 74)
+      ctx.rotate(0.45)
+      ctx.fillRect(-4, 0, 8, 34)
+      ctx.restore()
+      ctx.save()
+      ctx.translate(cx, 74)
+      ctx.rotate(-0.45)
+      ctx.fillRect(-4, 0, 8, 34)
+      ctx.restore()
+    } else {
+      ctx.fillRect(cx - 9, 42, 18, 38)
+      ctx.fillRect(cx - 9, 78, 7, 34)
+      ctx.fillRect(cx + 2, 78, 7, 34)
+    }
+  })
