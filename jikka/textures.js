@@ -495,6 +495,17 @@ export const kakejikuTexture = () =>
   })
 
 /**
+ * 黒板。深い緑に、消したチョークの跡がうすく残る
+ */
+export const blackboardTexture = () =>
+  canvasTexture(256, 192, (ctx, w, h) => {
+    ctx.fillStyle = '#26392f'
+    ctx.fillRect(0, 0, w, h)
+    speckle(ctx, w, h, 900, ['#2d4237', '#21332a'], 1.4)
+    stains(ctx, w, h, 7, '215, 220, 210', 0.14)
+  })
+
+/**
  * 空。上は青く、地平線のあたりは白っぽい
  */
 export const skyTexture = () =>

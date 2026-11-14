@@ -9,6 +9,7 @@ const RING = new THREE.TorusGeometry(0.2, 0.025, 6, 20)
 const SHADE = new THREE.CylinderGeometry(0.27, 0.3, 0.05, 20)
 const BULB = new THREE.SphereGeometry(0.045, 10, 8)
 const KAKEJIKU = new THREE.PlaneGeometry(0.42, 1.45)
+const CHALK = new THREE.CylinderGeometry(0.0055, 0.0055, 0.075, 8)
 
 /**
  * x, y, z の点を作る
@@ -189,6 +190,25 @@ export const PROP_TYPES = {
       box(b, m.gold, -w / 2 + 0.04, w / 2 - 0.04, 0.85, 0.89, -d / 2 + 0.04, d / 2 - 0.08)
       box(b, m.lacquer, -w / 2, -w / 2 + 0.025, 0.45, 1.65, d / 2, d / 2 + 0.5)
       box(b, m.lacquer, w / 2 - 0.025, w / 2, 0.45, 1.65, d / 2, d / 2 + 0.5)
+    },
+  },
+  blackboard: {
+    label: '黒板',
+    size: (p) => ({ w: p.w ?? 0.9, d: 0.07, h: p.h ?? 0.6 }),
+    solid: false,
+    build: (b, m, p, s) => {
+      const { w, h } = s
+      const f = 0.03
+      box(b, m.blackboard, -w / 2 + f, w / 2 - f, f, h - f, -0.035, -0.02)
+      box(b, m.furniture, -w / 2, w / 2, 0, f, -0.035, -0.008)
+      box(b, m.furniture, -w / 2, w / 2, h - f, h, -0.035, -0.008)
+      box(b, m.furniture, -w / 2, -w / 2 + f, f, h - f, -0.035, -0.008)
+      box(b, m.furniture, w / 2 - f, w / 2, f, h - f, -0.035, -0.008)
+      // チョークを置く受けと、白と黄色のチョーク
+      box(b, m.furniture, -w / 2 + 0.04, w / 2 - 0.04, 0, 0.01, -0.008, 0.035)
+      box(b, m.furniture, -w / 2 + 0.04, w / 2 - 0.04, 0.01, 0.022, 0.028, 0.035)
+      b.add(CHALK, m.chalk, at(-0.1, 0.0155, 0.012, 0, 0.12, Math.PI / 2))
+      b.add(CHALK, m.chalkYellow, at(0.06, 0.0155, 0.016, 0, -0.08, Math.PI / 2))
     },
   },
   kakejiku: {

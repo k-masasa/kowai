@@ -21,8 +21,8 @@ const STRIDE = 0.68
 // Shift を押している間の速さと歩幅
 const RUN = 2.3
 const RUN_STRIDE = 0.86
-// 始めの場所。玄関の前の砂利の道から、玄関の方を向く
-const START = { x: 12.8, z: -2.27, yaw: Math.PI / 2 }
+// 始めの場所。玄関の前の砂利の庭から、玄関の方を向く
+const START = { x: 15.3, z: -2.27, yaw: Math.PI / 2 }
 // 日の光の来る向き。午後の、南西からの光
 const SUN_DIR = new THREE.Vector3(-0.55, 0.62, 0.56).normalize()
 // 地平線の色。霧の色もこれにする

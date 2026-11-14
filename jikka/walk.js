@@ -9,9 +9,43 @@ const KNEE = 0.3
 const HEAD = 1.6
 
 /**
+ * 点が多角形の中にあるか
+ * @param poly - 角の並び。それぞれ [x, z]
+ */
+const inPoly = (poly, x, z) => {
+  let inside = false
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, zi] = poly[i]
+    const [xj, zj] = poly[j]
+    if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) {
+      inside = !inside
+    }
+  }
+  return inside
+}
+
+/**
+ * 多角形の床を、床の並びに入れられる形にする。まわりの四角 (x0, x1, z0, z1) も付ける
+ * @param poly - 角の並び。それぞれ [x, z]
+ */
+export const polyFloor = (poly, h, s) => {
+  const xs = poly.map((p) => p[0])
+  const zs = poly.map((p) => p[1])
+  return {
+    x0: Math.min(...xs),
+    x1: Math.max(...xs),
+    z0: Math.min(...zs),
+    z1: Math.max(...zs),
+    poly,
+    h,
+    s,
+  }
+}
+
+/**
  * 当たる線と床から、プレイヤーの動きを決める
  * @param walls - 当たる線の並び。{ ax, az, bx, bz, y0, y1 }。y0 と y1 (壁の下と上) があれば、その高さにいる時だけ当たる
- * @param floors - 床の四角の並び。{ x0, x1, z0, z1, h, s }。h は高さ (階段のように、(x, z) から高さを返す関数でもよい)、s は足音の種類。重なる所では、あとにある方を使う
+ * @param floors - 床の四角の並び。{ x0, x1, z0, z1, h, s }。h は高さ (階段のように、(x, z) から高さを返す関数でもよい)、s は足音の種類。poly があれば、四角の中でも、その多角形の中だけ。重なる所では、あとにある方を使う
  */
 export const createWalker = (walls, floors) => {
   /**
@@ -20,9 +54,9 @@ export const createWalker = (walls, floors) => {
   const floorAt = (x, z) => {
     for (let i = floors.length - 1; i >= 0; i--) {
       const f = floors[i]
-      if (x >= f.x0 && x <= f.x1 && z >= f.z0 && z <= f.z1) {
-        return f
-      }
+      if (x < f.x0 || x > f.x1 || z < f.z0 || z > f.z1) continue
+      if (f.poly && !inPoly(f.poly, x, z)) continue
+      return f
     }
     return null
   }

@@ -168,6 +168,15 @@ export const flat = (b, mat, y, x0, x1, z0, z1, dir) => {
   )
 }
 
+/**
+ * 多角形の、上を向いた面を置く。砂利の庭のような、四角でない地面に使う
+ * @param points - 角の並び。それぞれ [x, z]
+ */
+export const flatPoly = (b, mat, y, points) => {
+  const shape = new THREE.Shape(points.map(([x, z]) => new THREE.Vector2(x, -z)))
+  b.add(new THREE.ShapeGeometry(shape), mat, at(0, y, 0, -Math.PI / 2))
+}
+
 const Y_AXIS = new THREE.Vector3(0, 1, 0)
 
 /**
@@ -380,8 +389,9 @@ export const makeWalls = (b, mats, segs) => {
   /**
    * ガラス戸を、1枚ずつ幅に合わせて並べる。2本の溝に、互い違いに入っている
    * @param pane - ガラスのマテリアル (すりガラスなど)
+   * @param koshi - 下の板 (腰板) の高さ (m)。あれば、その上のガラスを桟で縦2列、横3段に分ける
    */
-  const glassDoors = (axis, c, a0, a1, y0, y1, pane) => {
+  const glassDoors = (axis, c, a0, a1, y0, y1, pane, koshi) => {
     const n = Math.max(1, Math.round((a1 - a0) / 0.91))
     const w = (a1 - a0) / n
     for (let i = 0; i < n; i++) {
@@ -392,8 +402,22 @@ export const makeWalls = (b, mats, segs) => {
       slab(mats.frame, axis, cc, p1 - 0.045, p1, y0, y1, 0.032)
       slab(mats.frame, axis, cc, p0, p1, y0, y0 + 0.08, 0.032)
       slab(mats.frame, axis, cc, p0, p1, y1 - 0.05, y1, 0.032)
-      slab(mats.frame, axis, cc, p0, p1, y0 + 0.82, y0 + 0.85, 0.028)
-      slab(pane, axis, cc, p0 + 0.04, p1 - 0.04, y0 + 0.08, y1 - 0.05, 0.006)
+      if (!koshi) {
+        slab(mats.frame, axis, cc, p0, p1, y0 + 0.82, y0 + 0.85, 0.028)
+        slab(pane, axis, cc, p0 + 0.04, p1 - 0.04, y0 + 0.08, y1 - 0.05, 0.006)
+        continue
+      }
+      const g0 = y0 + koshi + 0.05
+      const g1 = y1 - 0.05
+      slab(mats.frame, axis, cc, p0 + 0.04, p1 - 0.04, y0 + 0.08, g0 - 0.05, 0.018)
+      slab(mats.frame, axis, cc, p0, p1, g0 - 0.05, g0, 0.032)
+      ;[1, 2].forEach((k) => {
+        const y = g0 + ((g1 - g0) * k) / 3
+        slab(mats.frame, axis, cc, p0, p1, y - 0.015, y + 0.015, 0.028)
+      })
+      const mid = (p0 + p1) / 2
+      slab(mats.frame, axis, cc, mid - 0.015, mid + 0.015, g0, g1, 0.028)
+      slab(pane, axis, cc, p0 + 0.04, p1 - 0.04, g0, g1, 0.006)
     }
   }
 
@@ -404,6 +428,7 @@ export const makeWalls = (b, mats, segs) => {
    * @param spec.head - 鴨居の高さ。y0 からの長さ (m)
    * @param spec.mat - kind が 'plaster' の時の壁のマテリアル。無ければ土壁
    * @param spec.pane - kind が 'glass' の時のガラスのマテリアル。無ければ透明なガラス
+   * @param spec.koshi - kind が 'glass' の時の、下の板 (腰板) の高さ (m)。無ければ腰板なし
    */
   const inner = (spec) => {
     const { axis, at: c, from, to, y0, y1, kind, doors = [] } = spec
@@ -415,7 +440,7 @@ export const makeWalls = (b, mats, segs) => {
       } else if (kind === 'shoji') {
         panels(mats.shoji, axis, c, a0, a1, y0, head)
       } else if (kind === 'glass') {
-        glassDoors(axis, c, a0, a1, y0, head, spec.pane ?? mats.glass)
+        glassDoors(axis, c, a0, a1, y0, head, spec.pane ?? mats.glass, spec.koshi)
       } else {
         slab(wallMat, axis, c, a0, a1, y0, head, 0.1)
       }

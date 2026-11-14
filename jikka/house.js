@@ -18,6 +18,7 @@ import {
   CEIL,
   FLOOR,
   FLOOR_KINDS,
+  GENKAN,
   LANDING,
   N_FLOOR,
   N_LOFT,
@@ -120,6 +121,7 @@ const buildDataWalls = (c) => {
         y1: w.y1 ?? CEIL,
         kind: w.kind,
         head: w.head,
+        koshi: w.koshi,
         mat: w.mat ? mats[w.mat] : undefined,
         pane: w.pane ? mats[w.pane] : undefined,
         doors: w.holes.map((h) => [h.from, h.to]),
@@ -175,7 +177,8 @@ const cover = (c, w) => {
  */
 const buildMain = (c) => {
   const { b, mats } = c
-  // 床下 (土台)。台所のコンロの横は一段下がり、洗面所はさらに下がって、ほぼ外と同じ高さ
+  // 床下 (土台)。玄関の板の間は一段低い。台所のコンロの横は一段下がり、洗面所はさらに下がって、
+  // ほぼ外と同じ高さ
   boxWithout(
     b,
     mats.base,
@@ -183,25 +186,30 @@ const buildMain = (c) => {
     [
       [3.64, 4.55, LANDING, 1, -5.5, -4.55],
       [4.55, 8.2, WASH, 1, -5.5, -4.1],
+      [4.55, 8.2, GENKAN, 1, -4.1, 0],
     ],
   )
   box(b, mats.base, 0, 9.1, 0, FLOOR, 4.55, 9.1)
-  box(b, mats.base, 8.19, 9.1, 0, FLOOR, -3.64, 4.55)
-  // 玄関の土間と外の石段、ろうかから庭へ下りる沓脱石
-  box(b, mats.doma, 9.1, 10.3, 0, 0.18, -3.64, -0.91)
-  box(b, mats.stone, 10.3, 11.0, 0, 0.09, -3.05, -1.5)
-  box(b, mats.stone, 9.1, 9.75, 0, 0.25, 5.55, 6.35)
+  box(b, mats.base, 8.19, 9.1, 0, GENKAN, -3.64, -0.91)
+  box(b, mats.base, 8.19, 9.1, 0, FLOOR, -0.91, 4.55)
+  // 玄関の土間と、表の戸口の前の石段。土間の広さと戸口の場所は、layout.js のデータに合わせる
+  const doma = c.layout.rooms.find((r) => r.id === 'doma')
+  const [dx0, dx1] = doma.x
+  const [dz0, dz1] = doma.z
+  const door = c.layout.walls.find((w) => w.id === 'doma-e').holes.find((h) => h.door)
+  box(b, mats.doma, dx0, dx1, 0, doma.y, dz0, dz1)
+  box(b, mats.stone, dx1, dx1 + 0.7, 0, 0.09, door.from, door.to)
   c.floors.push(
     { x0: -3.64, x1: 8.19, z0: -5.46, z1: 4.55, h: FLOOR, s: 'board' },
     { x0: 0, x1: 9.1, z0: 4.55, z1: 9.1, h: FLOOR, s: 'board' },
     { x0: 8.19, x1: 9.1, z0: -3.64, z1: 4.55, h: FLOOR, s: 'board' },
-    { x0: 10.3, x1: 11.0, z0: -3.05, z1: -1.5, h: 0.09, s: 'hard' },
-    { x0: 9.1, x1: 9.75, z0: 5.55, z1: 6.35, h: 0.25, s: 'hard' },
+    { x0: dx1, x1: dx1 + 0.7, z0: door.from, z1: door.to, h: 0.09, s: 'hard' },
   )
 }
 
 /**
- * 母屋の骨組みのうち、部屋と壁のあとに置くもの。天井裏、玄関の斜めの壁、床の間、階段、仏壇の棚、屋根
+ * 母屋の骨組みのうち、部屋と壁のあとに置くもの。天井裏、玄関の斜めの壁と段、床の間、階段、仏壇の棚、
+ * 屋根、土間の屋根
  */
 const buildMainAfter = (c) => {
   const { b, mats, W } = c
@@ -216,18 +224,20 @@ const buildMainAfter = (c) => {
   flat(b, mats.attic, loft, -3.64, 9.1, 0.91, 4.55, 1)
   flat(b, mats.attic, loft, 0, 9.1, 4.55, 9.1, 1)
 
-  // 玄関の土間のまわりの、屋根の下のすき間は、斜めの壁でふさぐ
+  // 玄関の北の、母屋の屋根の下のすき間は、斜めの壁でふさぐ
   /**
    * 母屋の屋根の東側の、x の所の屋根板の下の高さ
    */
   const roofY = (x) => EAVE + ((10.45 - x) * RISE) / 7.72 - 0.04
   slantWall(b, mats.siding, 'x', -3.675, 8.19, 9.1, 3.3, roofY(8.19), roofY(9.1))
-  slantWall(b, mats.siding, 'x', -3.675, 9.1, 10.3, 2.72, roofY(9.1), roofY(10.3))
-  slantWall(b, mats.siding, 'x', -0.875, 9.1, 10.3, 2.72, roofY(9.1), roofY(10.3))
   // 上がり框と、その上の小壁
-  box(b, mats.frame, 9.04, 9.16, 0.18, FLOOR, -3.64, -0.91)
+  box(b, mats.frame, 9.04, 9.16, 0.18, GENKAN, -3.64, -0.91)
   box(b, mats.frame, 9.04, 9.16, 2.45, 2.55, -3.64, -0.91)
   box(b, mats.plaster, 9.06, 9.14, 2.55, CEIL, -3.64, -0.91)
+  // 玄関の板の間から、茶の間・台所・ろうかへ上がる段の、前の板
+  box(b, mats.frame, 4.55, 8.19, GENKAN, FLOOR, -0.03, 0)
+  box(b, mats.frame, 4.55, 4.6, GENKAN, FLOOR, -4.1, 0)
+  box(b, mats.frame, 8.19, 9.1, GENKAN, FLOOR, -0.94, -0.91)
 
   // 南西の角と北東の角は、屋根の下があいている。柱と桁だけ
   W.post('x', 9.1, -3.64, 0, WALL_TOP)
@@ -255,19 +265,28 @@ const buildMainAfter = (c) => {
   box(b, mats.plaster, -1.82, 0, FLOOR + 2.02, CEIL, -4.585, -4.515)
   W.seg('x', -4.55, -1.82, 0)
   // 玄関の部屋から洗面所へ下りる戸口の、踏み台 (戸口の場所に合わせる)
+  const step = (GENKAN + WASH) / 2
   const door = c.layout.walls.find((w) => w.id === 'genkan-wash')
   door?.holes.forEach((h) => {
-    box(b, mats.doma, h.from, h.to, WASH, 0.3, -4.5, -4.15)
-    c.floors.push({ x0: h.from, x1: h.to, z0: -4.5, z1: -4.1, h: 0.3, s: 'hard' })
+    box(b, mats.doma, h.from, h.to, WASH, step, -4.5, -4.15)
+    c.floors.push({ x0: h.from, x1: h.to, z0: -4.5, z1: -4.1, h: step, s: 'hard' })
   })
 
   // 屋根。棟は南北で、東と西に軒が出る。北と南は妻 (三角の壁)
   gableRoof(b, mats.roofMain, -4.99, 10.45, -5.46, 9.7, EAVE, RISE, 'z')
   gableEnd(b, mats.siding, 'z', -5.535, -3.64, 9.1, WALL_TOP, 3.1, -1)
   gableEnd(b, mats.siding, 'z', 9.175, -3.64, 9.1, WALL_TOP, 3.1, 1)
-  // 玄関の庇
-  box(b, mats.roofMain, 10.3, 11.2, 2.42, 2.48, -3.45, -1.1)
-  ;[-3.35, -1.2].forEach((z) => box(b, mats.frame, 10.3, 11.0, 2.34, 2.42, z - 0.03, z + 0.03))
+  // 土間の屋根。母屋の屋根の下から東へ突き出す切妻で、棟は東西。表の戸口の上まで出る。
+  // 土間の壁の上の高さ (layout.js の 2.68) は、この屋根の軒の線に合わせてある
+  const doma = c.layout.rooms.find((r) => r.id === 'doma')
+  const [dx0, dx1] = doma.x
+  const [dz0, dz1] = doma.z
+  const over = 0.35
+  const eave = 2.53
+  const rise = 0.72
+  const wallTop = eave + (over * rise) / ((dz1 - dz0) / 2 + over)
+  gableRoof(b, mats.roofEntry, dx0, dx1 + 0.6, dz0 - over, dz1 + over, eave, rise, 'x')
+  gableEnd(b, mats.siding, 'x', dx1 + 0.075, dz0, dz1, wallTop, eave + rise - wallTop, 1)
 }
 
 /**
@@ -331,12 +350,15 @@ const buildNorth = (c) => {
 }
 
 /**
- * 東の小屋の骨組み。南の端にまきを焚く所、その北にふろ、さらに北に洗濯機の所。東の半分は物置の小屋で、南東の角にトイレ
+ * 東の小屋の骨組み。南の端にまきを焚く所、その北にふろ、さらに北に洗濯機の所。東の3分の2は物置の小屋で、
+ * 南東の角にトイレ。東西に長い (6間)
  */
 const buildBath = (c) => {
   const { b, mats, W } = c
-  const [x0, x1, z0, z1] = [9.1, 16.38, -12.74, -5.46]
+  const [x0, x1, z0, z1] = [9.1, 20.02, -12.74, -5.46]
+  // ふろの側と小屋の境、トイレの西の壁
   const xm = 12.74
+  const xt = x1 - 1.82
   const eave = 2.6
   const rise = 1.5
   const over = 0.5
@@ -347,24 +369,24 @@ const buildBath = (c) => {
   box(b, mats.bathTile, x0, xm, 0, 0.15, -10.92, -7.28)
   box(b, mats.concrete, x0, xm, 0, 0.15, z0, -10.92)
   box(b, mats.concrete, xm, x1, 0, 0.05, z0, z1)
-  box(b, mats.bathTile, 14.56, x1, 0.05, 0.15, -7.28, z1)
+  box(b, mats.bathTile, xt, x1, 0.05, 0.15, -7.28, z1)
   c.floors.push(
     { x0, x1: xm, z0: -7.28, z1, h: 0.05, s: 'ground' },
     { x0, x1: xm, z0: -10.92, z1: -7.28, h: 0.15, s: 'hard' },
     { x0, x1: xm, z0, z1: -10.92, h: 0.15, s: 'hard' },
     { x0: xm, x1, z0, z1, h: 0.05, s: 'hard' },
-    { x0: 14.56, x1, z0: -7.28, z1, h: 0.15, s: 'hard' },
+    { x0: xt, x1, z0: -7.28, z1, h: 0.15, s: 'hard' },
   )
   c.places.push(
     { name: 'まきを焚く所', x0, x1: xm, z0: -7.28, z1 },
     { name: 'ふろ', x0, x1: xm, z0: -10.92, z1: -7.28 },
     { name: '洗濯機の所', x0, x1: xm, z0, z1: -10.92 },
-    { name: 'トイレ', x0: 14.56, x1, z0: -7.28, z1 },
+    { name: 'トイレ', x0: xt, x1, z0: -7.28, z1 },
     { name: '小屋', x0: xm, x1, z0, z1 },
   )
   flat(b, mats.cream, 2.3, x0, xm, -10.92, -7.28, -1)
   flat(b, mats.cream, 2.3, x0, xm, z0, -10.92, -1)
-  flat(b, mats.cream, 2.3, 14.56, x1, -7.28, z1, -1)
+  flat(b, mats.cream, 2.3, xt, x1, -7.28, z1, -1)
 
   // ふろおけ。まきを焚くかまどの上に、鉄のおけが乗る。焚き口は、まきを焚く所の側にある
   box(b, mats.block, 10.45, 11.45, 0.15, 0.62, -8.42, -7.33)

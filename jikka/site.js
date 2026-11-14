@@ -4,6 +4,7 @@ import {
   atScaled,
   box,
   flat,
+  flatPoly,
   gableEnd,
   gableRoof,
   makeBuilder,
@@ -13,15 +14,54 @@ import {
 } from './kit.js'
 import { bulb } from './lamps.js'
 import { seeded } from './textures.js'
+import { polyFloor } from './walk.js'
 
-// 家のまわり。庭 (畑・池・ビニールハウス・大きな木)、林、用水路、田んぼ、東の道と、道の向こうの牛・豚小屋。
-// 遠くには、屋敷林に囲まれた家と山が見える。
-// 敷地は x が -22 から 29.6、z が -20.4 から 28 で、まわりの田んぼより 25 cm 高い
+// 家のまわり。庭 (砂利・畑・池・ビニールハウス・大きな木)、林、用水路、田んぼ、東の道と、道の向こうの
+// 牛・豚小屋。遠くには、屋敷林に囲まれた家と山が見える。
+// 敷地は x が -22 から 33.24、z が -20.4 から 28 で、まわりの田んぼより 25 cm 高い
 
 const PADDY = -0.25
 // 道 (路肩を入れた幅) の西の端と東の端
-const ROAD_W = 29.6
-const ROAD_E = 34.0
+const ROAD_W = 33.24
+const ROAD_E = 37.64
+// 道の向こうの、牛・豚小屋のまわりの土の東の端
+const BARN_E = 50.64
+
+// 砂利。玄関の前の庭 (大きな木のまわり) と、そこから家の南をまわって東の道へ出る道。角の並び [x, z]
+const GRAVEL = [
+  [11.0, -3.64],
+  [11.25, -4.3],
+  [11.9, -4.72],
+  [12.9, -4.88],
+  [14.5, -4.92],
+  [17.0, -4.9],
+  [19.4, -4.85],
+  [20.3, -4.7],
+  [20.62, -4.3],
+  [20.62, 8.0],
+  [20.8, 8.75],
+  [21.6, 9.05],
+  [24.5, 9.0],
+  [27.5, 9.1],
+  [30.5, 9.25],
+  [ROAD_W, 9.3],
+  [ROAD_W, 12.05],
+  [30.5, 12.15],
+  [27.0, 12.1],
+  [23.5, 11.95],
+  [20.5, 11.85],
+  [17.6, 11.8],
+  [14.0, 11.85],
+  [12.0, 12.1],
+  [10.6, 12.25],
+  [9.75, 11.85],
+  [9.3, 11.1],
+  [9.25, 10.2],
+  [9.55, 9.45],
+  [10.05, 8.6],
+  [10.1, 6.0],
+  [10.1, -0.91],
+]
 
 const STONE = new THREE.IcosahedronGeometry(1, 0)
 const LEAF = new THREE.IcosahedronGeometry(1, 0)
@@ -73,10 +113,10 @@ const ground = (c) => {
   const { b, mats } = c
   flat(b, mats.paddy, PADDY, -4500, 4500, -4500, 4500, 1)
   box(b, mats.grass, -22, ROAD_W, PADDY, 0, -20.4, 28)
-  box(b, mats.dirt, ROAD_E, 47, PADDY, 0, -8, 22)
-  box(b, mats.asphalt, 30.2, 33.4, PADDY, 0.05, -1500, 1500)
-  box(b, mats.gravel, ROAD_W, 30.2, PADDY, 0.02, -1500, 1500)
-  box(b, mats.gravel, 33.4, ROAD_E, PADDY, 0.02, -1500, 1500)
+  box(b, mats.dirt, ROAD_E, BARN_E, PADDY, 0, -8, 22)
+  box(b, mats.asphalt, ROAD_W + 0.6, ROAD_E - 0.6, PADDY, 0.05, -1500, 1500)
+  box(b, mats.gravel, ROAD_W, ROAD_W + 0.6, PADDY, 0.02, -1500, 1500)
+  box(b, mats.gravel, ROAD_E - 0.6, ROAD_E, PADDY, 0.02, -1500, 1500)
   // 用水路 (土の川)。敷地の北を、東へ流れる。北の岸はあぜ道
   flat(b, mats.water, -0.17, -1500, 1500, -21.6, -20.4, 1)
   box(b, mats.levee, -1500, 1500, PADDY, 0.03, -23, -21.6)
@@ -85,10 +125,10 @@ const ground = (c) => {
   c.floors.push(
     { x0: -5000, x1: 5000, z0: -5000, z1: 5000, h: PADDY, s: 'ground' },
     { x0: -22, x1: ROAD_W, z0: -20.4, z1: 28, h: 0, s: 'grass' },
-    { x0: ROAD_E, x1: 47, z0: -8, z1: 22, h: 0, s: 'gravel' },
-    { x0: ROAD_W, x1: 30.2, z0: -1500, z1: 1500, h: 0.02, s: 'gravel' },
-    { x0: 33.4, x1: ROAD_E, z0: -1500, z1: 1500, h: 0.02, s: 'gravel' },
-    { x0: 30.2, x1: 33.4, z0: -1500, z1: 1500, h: 0.05, s: 'hard' },
+    { x0: ROAD_E, x1: BARN_E, z0: -8, z1: 22, h: 0, s: 'gravel' },
+    { x0: ROAD_W, x1: ROAD_W + 0.6, z0: -1500, z1: 1500, h: 0.02, s: 'gravel' },
+    { x0: ROAD_E - 0.6, x1: ROAD_E, z0: -1500, z1: 1500, h: 0.02, s: 'gravel' },
+    { x0: ROAD_W + 0.6, x1: ROAD_E - 0.6, z0: -1500, z1: 1500, h: 0.05, s: 'hard' },
     { x0: -1500, x1: -22, z0: -20.4, z1: -19.6, h: 0.03, s: 'grass' },
     { x0: ROAD_E, x1: 1500, z0: -20.4, z1: -19.6, h: 0.03, s: 'grass' },
   )
@@ -104,7 +144,7 @@ const ground = (c) => {
     if (x >= -22 && x <= ROAD_W) {
       levee(x - 0.25, x + 0.25, -780, -23)
       levee(x - 0.25, x + 0.25, 28, 780)
-    } else if (x >= ROAD_E && x <= 47) {
+    } else if (x >= ROAD_E && x <= BARN_E) {
       levee(x - 0.25, x + 0.25, -780, -23)
       levee(x - 0.25, x + 0.25, -19.6, -8)
       levee(x - 0.25, x + 0.25, 22, 780)
@@ -120,53 +160,53 @@ const ground = (c) => {
     })
   }
   levee(-780, -22, 3.75, 4.25)
-  levee(47, 780, 3.75, 4.25)
+  levee(BARN_E, 780, 3.75, 4.25)
 
   c.places.push(
     { name: '道', x0: ROAD_W, x1: ROAD_E, z0: -1500, z1: 1500 },
     { name: '用水路', x0: -22, x1: ROAD_W, z0: -20.4, z1: -19.0 },
     { name: '田んぼ', x0: -5000, x1: -22, z0: -5000, z1: 5000 },
     { name: '田んぼ', x0: -5000, x1: 5000, z0: 28, z1: 5000 },
-    { name: '田んぼ', x0: 47, x1: 5000, z0: -5000, z1: 5000 },
-    { name: '田んぼ', x0: ROAD_E, x1: 47, z0: -20.4, z1: -8 },
-    { name: '田んぼ', x0: ROAD_E, x1: 47, z0: 22, z1: 28 },
+    { name: '田んぼ', x0: BARN_E, x1: 5000, z0: -5000, z1: 5000 },
+    { name: '田んぼ', x0: ROAD_E, x1: BARN_E, z0: -20.4, z1: -8 },
+    { name: '田んぼ', x0: ROAD_E, x1: BARN_E, z0: 22, z1: 28 },
   )
 }
 
 /**
- * 庭。家のまわりの土、玄関から道までの砂利、畑、池、庭の大きな木
+ * 庭。家のまわりの土、玄関の前と道へ出る道の砂利、畑、池、庭の大きな木
  */
 const yard = (c) => {
   const { b, mats, W } = c
-  // 家のまわりの、踏み固めた土 (前と、中庭と、北の家の裏)
-  flat(b, mats.dirt, 0.004, 9.1, 17.5, -6.5, 12.5, 1)
+  // 家のまわりの、踏み固めた土 (前と、中庭と、北の家と東の小屋の裏)
+  flat(b, mats.dirt, 0.004, 9.1, 20.64, -6.5, 12.5, 1)
   flat(b, mats.dirt, 0.004, 1.82, 9.1, -13.2, -5.46, 1)
-  flat(b, mats.dirt, 0.004, -6.4, 17.2, -14.0, -12.74, 1)
-  // 玄関から道までの砂利の道
-  flat(b, mats.gravel, 0.008, 11.0, ROAD_W, -3.5, -1.05, 1)
+  flat(b, mats.dirt, 0.004, -6.4, 20.6, -14.0, -12.74, 1)
+  flatPoly(b, mats.gravel, 0.008, GRAVEL)
   c.floors.push(
-    { x0: 9.1, x1: 17.5, z0: -6.5, z1: 12.5, h: 0, s: 'ground' },
+    { x0: 9.1, x1: 20.64, z0: -6.5, z1: 12.5, h: 0, s: 'ground' },
     { x0: 1.82, x1: 9.1, z0: -13.2, z1: -5.46, h: 0, s: 'ground' },
-    { x0: -6.4, x1: 17.2, z0: -14.0, z1: -12.74, h: 0, s: 'ground' },
-    { x0: 11.0, x1: ROAD_W, z0: -3.5, z1: -1.05, h: 0, s: 'gravel' },
+    { x0: -6.4, x1: 20.6, z0: -14.0, z1: -12.74, h: 0, s: 'ground' },
+    polyFloor(GRAVEL, 0, 'gravel'),
   )
   c.places.push({ name: '中庭', x0: 1.82, x1: 9.1, z0: -12.74, z1: -5.46 })
 
   // 畑。うねが南北に10本。2本おきに、野菜が育っている
-  flat(b, mats.soil, 0.006, 17, 26, -0.5, 9, 1)
+  const [fx0, fx1, fz0, fz1] = [20.64, 29.64, -4.5, 5.0]
+  flat(b, mats.soil, 0.006, fx0, fx1, fz0, fz1, 1)
   for (let i = 0; i < 10; i++) {
-    const x = 17.45 + i * 0.9
-    box(b, mats.soil, x - 0.25, x + 0.25, 0, 0.14, -0.2, 8.7)
+    const x = fx0 + 0.45 + i * 0.9
+    box(b, mats.soil, x - 0.25, x + 0.25, 0, 0.14, fz0 + 0.3, fz1 - 0.3)
     if (i % 3 === 2) continue
-    for (let z = 0.1; z < 8.6; z += 0.42) {
-      c.plants.push([x, 0.2, z, 0.16 + ((i * 7 + z * 13) % 5) * 0.015])
+    for (let z = fz0 + 0.6; z < fz1 - 0.4; z += 0.42) {
+      c.plants.push([x, 0.2, z, 0.16 + ((i * 7 + (z - fz0) * 13) % 5) * 0.015])
     }
   }
-  c.floors.push({ x0: 17, x1: 26, z0: -0.5, z1: 9, h: 0, s: 'ground' })
-  c.places.push({ name: '畑', x0: 17, x1: 26, z0: -0.5, z1: 9 })
+  c.floors.push({ x0: fx0, x1: fx1, z0: fz0, z1: fz1, h: 0, s: 'ground' })
+  c.places.push({ name: '畑', x0: fx0, x1: fx1, z0: fz0, z1: fz1 })
 
   // 池。水のまわりに石を並べる
-  const [px, pz, rx, rz] = [21.5, 15.0, 2.6, 1.8]
+  const [px, pz, rx, rz] = [25.14, 15.0, 2.6, 1.8]
   b.add(
     new THREE.CircleGeometry(1, 32),
     mats.water,
@@ -256,11 +296,11 @@ const archCap = (cz, cy, R, halfSpan, side, door) => {
 }
 
 /**
- * ビニールハウス。パイプのアーチにビニールを張る。入口は西の端にある。中にトマトが2列
+ * ビニールハウス。パイプのアーチにビニールを張る。入口は西の端 (東の小屋の側) にある。中にトマトが2列
  */
 const greenhouse = (c) => {
   const { b, mats, W } = c
-  const [gx0, gx1, gz0, gz1] = [17, 26, -14.5, -9.5]
+  const [gx0, gx1, gz0, gz1] = [21.0, 30.0, -12.65, -7.65]
   const gz = (gz0 + gz1) / 2
   const halfSpan = (gz1 - gz0) / 2
   const R = 2.75
@@ -278,18 +318,18 @@ const greenhouse = (c) => {
   wallZ(b, mats.vinyl, gz1, gx0, gx1, 0, side, 1)
   b.add(archCap(gz, cy, R, halfSpan, side, null), mats.vinyl, at(gx1, 0, 0, 0, -Math.PI / 2, 0))
   b.add(
-    archCap(gz, cy, R, halfSpan, side, [-12.5, -11.5, 2.0]),
+    archCap(gz, cy, R, halfSpan, side, [gz - 0.5, gz + 0.5, 2.0]),
     mats.vinyl,
     at(gx0, 0, 0, 0, -Math.PI / 2, 0),
   )
   W.seg('x', gz0, gx0, gx1)
   W.seg('x', gz1, gx0, gx1)
   W.seg('z', gx1, gz0, gz1)
-  W.seg('z', gx0, gz0, -12.5)
-  W.seg('z', gx0, -11.5, gz1)
+  W.seg('z', gx0, gz0, gz - 0.5)
+  W.seg('z', gx0, gz + 0.5, gz1)
   // 中の土と、トマトの2列。支柱に葉が付く
   flat(b, mats.soil, 0.006, gx0, gx1, gz0, gz1, 1)
-  ;[-13.4, -10.6].forEach((z) => {
+  ;[gz - 1.4, gz + 1.4].forEach((z) => {
     for (let x = gx0 + 0.6; x < gx1 - 0.3; x += 0.5) {
       box(b, mats.rail, x - 0.01, x + 0.01, 0, 1.55, z - 0.01, z + 0.01)
       ;[0.45, 0.85, 1.25].forEach((y, k) => {
@@ -320,7 +360,11 @@ const rail = (c, axis, pos, from, to) => {
  */
 const cowShed = (c) => {
   const { b, mats, W } = c
-  const [x0, x1, z0, z1] = [34.6, 41.6, 0, 13]
+  const x0 = ROAD_E + 0.6
+  const [x1, z0, z1] = [x0 + 7, 0, 13]
+  // 南北の通路の、西の端と東の端
+  const aw = x0 + 2.8
+  const ae = x0 + 4.2
   const eave = 2.8
   const rise = 1.5
   const over = 0.45
@@ -363,20 +407,20 @@ const cowShed = (c) => {
   face('z', x0, z0, z1, [{ from: 5.6, to: 7.4, y0: 0, y1: 2.4, door: true }], vents(side))
   face('z', x1, z0, z1, [], vents(side))
   face('x', z0, x0, x1, [], [])
-  face('x', z1, x0, x1, [{ from: 37.4, to: 38.8, y0: 0, y1: 2.4, door: true }], [])
+  face('x', z1, x0, x1, [{ from: aw, to: ae, y0: 0, y1: 2.4, door: true }], [])
   gableEnd(b, mats.metalBlue, 'z', z0 - 0.03, x0, x1, top, rise - (over * rise) / half, -1)
   gableEnd(b, mats.metalBlue, 'z', z1 + 0.03, x0, x1, top, rise - (over * rise) / half, 1)
   gableRoof(b, mats.roofRust, x0 - over, x1 + over, z0 - over, z1 + over, eave, rise, 'z')
 
   // 牛の場所 (北)。木の柵と、通路ぞいのえさ箱
-  rail(c, 'z', 37.4, z0 + 0.1, 5.6)
-  rail(c, 'z', 38.8, z0 + 0.1, 6.5)
-  rail(c, 'x', 2.8, x0 + 0.1, 37.4)
-  rail(c, 'x', 5.6, x0 + 0.1, 37.4)
-  rail(c, 'x', 2.2, 38.8, x1 - 0.1)
-  rail(c, 'x', 4.4, 38.8, x1 - 0.1)
-  box(b, mats.concrete, 36.95, 37.35, 0.08, 0.5, 0.2, 5.5)
-  box(b, mats.concrete, 38.85, 39.25, 0.08, 0.5, 0.2, 6.4)
+  rail(c, 'z', aw, z0 + 0.1, 5.6)
+  rail(c, 'z', ae, z0 + 0.1, 6.5)
+  rail(c, 'x', 2.8, x0 + 0.1, aw)
+  rail(c, 'x', 5.6, x0 + 0.1, aw)
+  rail(c, 'x', 2.2, ae, x1 - 0.1)
+  rail(c, 'x', 4.4, ae, x1 - 0.1)
+  box(b, mats.concrete, aw - 0.45, aw - 0.05, 0.08, 0.5, 0.2, 5.5)
+  box(b, mats.concrete, ae + 0.05, ae + 0.45, 0.08, 0.5, 0.2, 6.4)
   // 豚の場所 (南)。ブロックの低い壁
   /**
    * 豚の場所の、ブロックの低い壁
@@ -393,20 +437,20 @@ const cowShed = (c) => {
       mat: mats.block,
       collide: false,
     })
-  pen('z', 37.4, 7.4, z1 - 0.1)
-  pen('x', 7.4, x0 + 0.1, 37.4)
-  pen('x', 10.15, x0 + 0.1, 37.4)
-  pen('z', 38.8, 6.5, z1 - 0.1)
-  pen('x', 6.5, 38.8, x1 - 0.1)
-  pen('x', 9.7, 38.8, x1 - 0.1)
+  pen('z', aw, 7.4, z1 - 0.1)
+  pen('x', 7.4, x0 + 0.1, aw)
+  pen('x', 10.15, x0 + 0.1, aw)
+  pen('z', ae, 6.5, z1 - 0.1)
+  pen('x', 6.5, ae, x1 - 0.1)
+  pen('x', 9.7, ae, x1 - 0.1)
   // 歩けるのは、南北の通路と、西の戸口からの短い通路だけ
-  W.seg('z', 37.4, z0, 5.6)
-  W.seg('z', 37.4, 7.4, z1)
-  W.seg('z', 38.8, z0, z1)
-  W.seg('x', 5.6, x0, 37.4)
-  W.seg('x', 7.4, x0, 37.4)
-  bulb(b, mats, c.fixtures, 38.1, 3.5, top + 0.2)
-  bulb(b, mats, c.fixtures, 38.1, 9.5, top + 0.2)
+  W.seg('z', aw, z0, 5.6)
+  W.seg('z', aw, 7.4, z1)
+  W.seg('z', ae, z0, z1)
+  W.seg('x', 5.6, x0, aw)
+  W.seg('x', 7.4, x0, aw)
+  bulb(b, mats, c.fixtures, (aw + ae) / 2, 3.5, top + 0.2)
+  bulb(b, mats, c.fixtures, (aw + ae) / 2, 9.5, top + 0.2)
 }
 
 /**
@@ -414,7 +458,7 @@ const cowShed = (c) => {
  */
 const poles = (c) => {
   const { b, mats } = c
-  const x = 29.85
+  const x = ROAD_W + 0.25
   const spots = []
   for (let z = -320; z <= 320; z += 32) {
     tube(b, mats.pole, v(x, -0.3, z), v(x, 9.4, z), 0.14)
@@ -453,15 +497,16 @@ const poles = (c) => {
 const woods = (c) => {
   const rnd = seeded(20251)
   const keepOut = [
-    [-4.6, 10.6, -6.4, 10.0],
+    [-4.6, 13.6, -6.4, 10.0],
     [-6.4, 2.8, -13.7, -4.5],
     [1.8, 9.1, -13.2, -5.4],
-    [8.2, 17.3, -13.7, -4.5],
+    [8.2, 20.9, -13.7, -4.5],
     [9.2, 14.8, 12.2, 18.8],
-    [16.2, 26.8, -15.3, -8.7],
-    [16.4, 26.6, -1.2, 9.6],
-    [18.0, 25.0, 12.0, 18.0],
-    [10.0, 30.0, -4.2, -0.4],
+    [20.2, 30.8, -13.4, -6.9],
+    [20.0, 30.3, -5.2, 5.7],
+    [21.6, 28.6, 12.0, 18.0],
+    [9.1, 21.2, -5.0, 12.6],
+    [20.0, ROAD_W, 8.6, 12.6],
   ]
   /**
    * 家や庭の物と重なるか
@@ -486,8 +531,8 @@ const woods = (c) => {
   }
   scatter(-21, 7, 11.5, 27.5, 30, 0.8)
   scatter(-21, -7, -19.5, 11.5, 18, 0.5)
-  scatter(-21, 27, -19.8, -14.4, 18, 0.5)
-  scatter(8, 28, 19.5, 27.5, 8, 0.3)
+  scatter(-21, ROAD_W - 2.6, -19.8, -14.4, 18, 0.5)
+  scatter(8, ROAD_W - 1.6, 19.5, 27.5, 8, 0.3)
   c.trees.push({ x: 13.6, z: 4.8, cedar: false, big: true })
   c.trees.forEach((t) => {
     const r = t.big ? 0.45 : 0.25
@@ -510,7 +555,7 @@ const farmsteads = (c) => {
     const a = rnd() * Math.PI * 2
     const x = Math.cos(a) * d
     const z = Math.sin(a) * d
-    if (Math.abs(x - 31.8) < 30) continue
+    if (Math.abs(x - (ROAD_W + ROAD_E) / 2) < 30) continue
     const w = 7 + rnd() * 3
     const l = 11 + rnd() * 4
     const along = rnd() < 0.5
@@ -610,12 +655,13 @@ const bounds = (c) => {
    * 見えない壁を1本足す
    */
   const add = (ax, az, bx, bz) => c.walls.push({ ax, az, bx, bz })
+  const east = BARN_E + 8
   add(-30, -20.3, ROAD_W, -20.3)
-  add(ROAD_E, -20.3, 55, -20.3)
+  add(ROAD_E, -20.3, east, -20.3)
   add(-30, 45, ROAD_W, 45)
-  add(ROAD_E, 45, 55, 45)
+  add(ROAD_E, 45, east, 45)
   add(-30, -20.3, -30, 45)
-  add(55, -20.3, 55, 45)
+  add(east, -20.3, east, 45)
   add(ROAD_W, -20.3, ROAD_W, -160)
   add(ROAD_E, -20.3, ROAD_E, -160)
   add(ROAD_W, -160, ROAD_E, -160)

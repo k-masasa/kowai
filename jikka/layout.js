@@ -6,6 +6,8 @@
 export const FLOOR = 0.5
 export const CEIL = 2.9
 export const WALL_TOP = 3.34
+// 玄関の板の間の床の高さ。茶の間や台所より一段低い
+export const GENKAN = 0.36
 // 台所のコンロの横の、一段下がった所と、洗面所の床の高さ
 export const LANDING = 0.3
 export const WASH = 0.1
@@ -15,7 +17,7 @@ export const N_LOFT = 2.95
 export const N_UP = 5.2
 export const N_TOP = 5.4 + (0.45 * 1.9) / (7.28 / 2 + 0.45)
 // 東の小屋と南の小屋の、外壁の上
-export const B_TOP = 2.6 + (0.5 * 1.5) / (7.28 / 2 + 0.5)
+export const B_TOP = 2.6 + (0.5 * 1.5) / (10.92 / 2 + 0.5)
 export const S_TOP = 2.3 + (0.4 * 0.9) / (4 / 2 + 0.4)
 
 // 床の種類
@@ -43,17 +45,25 @@ export const ROOMS = [
     floor: 'board',
     y: LANDING,
   },
-  { id: 'genkan-room', name: '玄関', x: [4.55, 8.19], z: [-4.1, 0], floor: 'board' },
+  { id: 'genkan-room', name: '玄関', x: [4.55, 8.19], z: [-4.1, 0], floor: 'board', y: GENKAN },
   { id: 'wash', name: '洗面所', x: [4.55, 8.19], z: [-5.46, -4.1], floor: 'doma', y: WASH },
   { id: 'butsuma', name: '仏間', x: [-3.64, 0], z: [-4.55, 0], floor: 'flooring' },
   { id: 'mono', name: 'ものおき', x: [-3.64, 0], z: [0, 4.55], floor: 'flooring' },
   { id: 'corridor-s', name: 'ろうか', x: [0, 9.1], z: [8.19, 9.1], floor: 'board' },
   { id: 'corridor-e', name: 'ろうか', x: [8.19, 9.1], z: [-0.91, 8.19], floor: 'board' },
-  { id: 'genkan-raised', name: '玄関', x: [8.19, 9.1], z: [-3.64, -0.91], floor: 'board' },
+  {
+    id: 'genkan-raised',
+    name: '玄関',
+    x: [8.19, 9.1],
+    z: [-3.64, -0.91],
+    floor: 'board',
+    y: GENKAN,
+  },
+  // 土間。東西の長さは、玄関の部屋の横幅と同じ (2間)
   {
     id: 'doma',
     name: '玄関',
-    x: [9.1, 10.3],
+    x: [9.1, 12.74],
     z: [-3.64, -0.91],
     floor: 'doma',
     y: 0.18,
@@ -64,7 +74,7 @@ export const ROOMS = [
 // 壁。type が 'outer' は外壁 (外は下見板、内は土壁)、'inner' は家の中の壁 (kind は fusuma / shoji / plaster / glass)、'solid' は1枚の材料の壁。
 // axis が 'x' なら z = at の線上を x が from から to へ、'z' なら x = at の線上を z が from から to へ走る。
 // holes は開口。inner の壁は戸口だけ (高さは y0 から head)。outer と solid の壁は、door が付いていれば戸口、無ければ窓。
-// inner の壁の y0 と y1 は、無ければ FLOOR と CEIL
+// inner の壁の y0 と y1 は、無ければ FLOOR と CEIL。ガラス戸の koshi は、下の板 (腰板) の高さ
 export const WALLS = [
   // 母屋の外壁
   {
@@ -114,7 +124,7 @@ export const WALLS = [
     at: 8.19,
     from: -4.1,
     to: -3.64,
-    y0: FLOOR,
+    y0: GENKAN,
     y1: WALL_TOP,
     out: 1,
     holes: [],
@@ -139,9 +149,9 @@ export const WALLS = [
     axis: 'x',
     at: -3.64,
     from: 9.1,
-    to: 10.3,
+    to: 12.74,
     y0: 0.18,
-    y1: 2.72,
+    y1: 2.68,
     out: -1,
     holes: [],
   },
@@ -150,11 +160,11 @@ export const WALLS = [
     name: '玄関の表',
     type: 'outer',
     axis: 'z',
-    at: 10.3,
+    at: 12.74,
     from: -3.64,
     to: -0.91,
     y0: 0.18,
-    y1: 2.72,
+    y1: 2.68,
     out: 1,
     holes: [{ from: -3.05, to: -1.5, y0: 0.18, y1: 2.25, door: true }],
   },
@@ -165,9 +175,9 @@ export const WALLS = [
     axis: 'x',
     at: -0.91,
     from: 9.1,
-    to: 10.3,
+    to: 12.74,
     y0: 0.18,
-    y1: 2.72,
+    y1: 2.68,
     out: 1,
     holes: [],
   },
@@ -183,6 +193,7 @@ export const WALLS = [
     y0: FLOOR,
     y1: WALL_TOP,
     head: 1.85,
+    koshi: 0.55,
     holes: [{ from: 5.55, to: 6.35 }],
   },
   {
@@ -197,6 +208,7 @@ export const WALLS = [
     y0: FLOOR,
     y1: WALL_TOP,
     head: 1.85,
+    koshi: 0.55,
     holes: [],
   },
   {
@@ -498,6 +510,8 @@ export const WALLS = [
     at: 8.19,
     from: -0.91,
     to: 0,
+    y0: GENKAN,
+    head: FLOOR + 1.8 - GENKAN,
     holes: [],
   },
   // 北の家
@@ -642,7 +656,7 @@ export const WALLS = [
     axis: 'x',
     at: -5.46,
     from: 9.1,
-    to: 16.38,
+    to: 20.02,
     y0: 0,
     y1: B_TOP,
     out: 1,
@@ -650,7 +664,7 @@ export const WALLS = [
     inner: 'shedBoard',
     holes: [
       { from: 9.55, to: 10.45, y0: 0.05, y1: 1.85, door: true },
-      { from: 15.0, to: 15.75, y0: 0.15, y1: 1.85, door: true },
+      { from: 18.64, to: 19.39, y0: 0.15, y1: 1.85, door: true },
     ],
   },
   {
@@ -679,20 +693,20 @@ export const WALLS = [
     axis: 'x',
     at: -12.74,
     from: 9.1,
-    to: 16.38,
+    to: 20.02,
     y0: 0,
     y1: B_TOP,
     out: -1,
     mat: 'shedBoard',
     inner: 'shedBoard',
-    holes: [{ from: 13.5, to: 14.8, y0: 1.0, y1: 1.7 }],
+    holes: [{ from: 15.75, to: 17.05, y0: 1.0, y1: 1.7 }],
   },
   {
     id: 'bath-e',
     name: '東の小屋の東の壁',
     type: 'outer',
     axis: 'z',
-    at: 16.38,
+    at: 20.02,
     from: -12.74,
     to: -5.46,
     y0: 0,
@@ -755,8 +769,8 @@ export const WALLS = [
     mat: 'shedBoard',
     axis: 'x',
     at: -7.28,
-    from: 14.56,
-    to: 16.38,
+    from: 18.2,
+    to: 20.02,
     y0: 0,
     y1: B_TOP,
     holes: [],
@@ -768,7 +782,7 @@ export const WALLS = [
     kind: 'plaster',
     mat: 'shedBoard',
     axis: 'z',
-    at: 14.56,
+    at: 18.2,
     from: -7.28,
     to: -5.46,
     y0: 0,
@@ -882,13 +896,23 @@ export const PROPS = [
     type: 'wallShelf',
     x: 5.9,
     z: -3.885,
-    y: FLOOR + 1.05,
+    y: GENKAN + 1.05,
     w: 2.6,
   },
-  { id: 'phone', name: '緑の電話', type: 'phone', x: 6.0, z: -3.9, y: FLOOR + 1.08 },
+  { id: 'phone', name: '緑の電話', type: 'phone', x: 6.0, z: -3.9, y: GENKAN + 1.08 },
   { id: 'getabako', name: '下駄箱', type: 'getabako', x: 9.7, z: -3.41, y: 0.18 },
   { id: 'washbasin', name: '洗面台', type: 'washbasin', x: 5.8, z: -5.17, y: WASH },
   { id: 'mirror', name: '鏡', type: 'mirror', x: 5.8, z: -5.386, y: WASH + 1.1 },
+  // 洗面所の、玄関側の壁にかけた黒板。チョークの受けに、白と黄色のチョーク
+  {
+    id: 'blackboard',
+    name: '黒板',
+    type: 'blackboard',
+    x: 5.9,
+    z: -4.185,
+    y: WASH + 1.1,
+    rot: 180,
+  },
   // 仏間
   { id: 'butsudan', name: '仏壇', type: 'butsudan', x: -0.91, z: -5.05, y: FLOOR + 0.08 },
   // ものおき (西に張り出した部屋)
@@ -919,7 +943,7 @@ export const PROPS = [
   { id: 'lamp-genkan', name: '蛍光灯', type: 'lamp', x: 6.37, z: -2.05, y: CEIL },
   { id: 'lamp-butsuma', name: '蛍光灯', type: 'lamp', x: -1.82, z: -2.27, y: CEIL },
   { id: 'lamp-mono', name: '蛍光灯', type: 'lamp', x: -1.82, z: 2.27, y: CEIL },
-  { id: 'bulb-doma', name: '電球', type: 'bulb', x: 9.7, z: -2.27, y: 2.55 },
+  { id: 'bulb-doma', name: '電球', type: 'bulb', x: 10.92, z: -2.27, y: 2.55 },
   { id: 'bulb-wash', name: '電球', type: 'bulb', x: 6.37, z: -4.78, y: CEIL },
   { id: 'bulb-corridor-s', name: '電球', type: 'bulb', x: 4.55, z: 8.65, y: CEIL },
   { id: 'bulb-corridor-e', name: '電球', type: 'bulb', x: 8.65, z: 4.0, y: CEIL },
@@ -980,7 +1004,7 @@ export const PROPS = [
     solid: false,
   },
   { id: 'washer', name: '洗濯機', type: 'washer', x: 11.975, z: -12.43, y: 0.15 },
-  { id: 'toilet', name: 'トイレ', type: 'toilet', x: 15.48, z: -6.67, y: 0.15 },
+  { id: 'toilet', name: 'トイレ', type: 'toilet', x: 19.12, z: -6.67, y: 0.15 },
   {
     id: 'logs',
     name: 'まき',
@@ -994,8 +1018,8 @@ export const PROPS = [
     mat: 'logs',
   },
   ...[
-    [15.94, -12.31, 0, 0.68, 0.62, 0.57],
-    [15.975, -12.3, 0.57, 0.55, 0.5, 0.38],
+    [19.58, -12.31, 0, 0.68, 0.62, 0.57],
+    [19.615, -12.3, 0.57, 0.55, 0.5, 0.38],
     [13.35, -12.335, 0, 0.7, 0.57, 0.45],
   ].map(([x, z, y, w, d, h], i) => ({
     id: `bath-box-${i + 1}`,
@@ -1011,8 +1035,8 @@ export const PROPS = [
   { id: 'bulb-maki', name: '電球', type: 'bulb', x: 10.9, z: -6.4, y: 3.3 },
   { id: 'bulb-furo', name: '電球', type: 'bulb', x: 10.9, z: -9.1, y: 2.3 },
   { id: 'bulb-sentaku', name: '電球', type: 'bulb', x: 10.9, z: -11.8, y: 2.3 },
-  { id: 'bulb-koya', name: '電球', type: 'bulb', x: 14.6, z: -9.8, y: 3.3 },
-  { id: 'bulb-toilet', name: '電球', type: 'bulb', x: 15.47, z: -6.4, y: 2.3 },
+  { id: 'bulb-koya', name: '電球', type: 'bulb', x: 16.38, z: -9.8, y: 3.3 },
+  { id: 'bulb-toilet', name: '電球', type: 'bulb', x: 19.11, z: -6.4, y: 2.3 },
   // 南の小屋
   {
     id: 'workbench',
