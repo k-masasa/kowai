@@ -70,6 +70,7 @@ const NORMAL = {
   repeat: 2,
   events: { torch: [15, 15], peek: [10, 10] },
 }
+// かんたんは、タイトルで選んでも始まらない (無いと言われる)。もう手を入れない
 const LEVELS = {
   easy: {
     days: 1,
@@ -1556,9 +1557,9 @@ const dayCard = (n) => {
  * @param levelName - 'easy' / 'normal' / 'hard'
  * @param lock - マウスを画面にロックするか。ロックすると、マウスを動かすだけで見回せる
  */
-const begin = (levelName = 'easy', lock = true) => {
+const begin = (levelName = 'normal', lock = true) => {
   if (S.mode !== 'title') return
-  S.level = LEVELS[levelName] || LEVELS.easy
+  S.level = LEVELS[levelName] || LEVELS.normal
   S.locked = lock
   S.firstNight = new Date()
   S.memory.visits += 1
@@ -3659,8 +3660,24 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight)
 })
 
+/**
+ * タイトルで、かんたんを選んだ。そんな帰り道は無いと言われて、もう押せなくなる
+ */
+const refuseEasy = (button) => {
+  $('greeting').textContent = 'かんたんな帰り道なんて、ありませんよ。'
+  button.disabled = true
+  sound.start()
+  sound.whisper()
+}
+
 document.querySelectorAll('#levels button').forEach((button) => {
-  button.addEventListener('click', () => begin(button.dataset.level))
+  button.addEventListener('click', () => {
+    if (button.dataset.level === 'easy') {
+      refuseEasy(button)
+      return
+    }
+    begin(button.dataset.level)
+  })
 })
 $('pause').addEventListener('click', resume)
 $('ending').addEventListener('click', backToTitle)
@@ -3690,7 +3707,7 @@ if (import.meta.env.DEV) {
           n: h.face?.normal.toArray().map((v) => v.toFixed(2)),
         }))
     },
-    start: (levelName = 'easy') => begin(levelName, false),
+    start: (levelName = 'normal') => begin(levelName, false),
     home: () => goHome(),
     person,
     walker: (force) => spawnWalker(force),
