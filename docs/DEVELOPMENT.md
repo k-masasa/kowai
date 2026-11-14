@@ -77,6 +77,9 @@ __ashioto.walker({ strange: true })
 - 20階建てなので、扉・窓・照明の光る部分などは階ごとの入れ物 (`floorGroups`) に入れ、中にいる間は上下2階分、外にいる間は下の4階分だけ描く。
 - 建物の奥は中の詰まった箱で、2012号室の玄関と廊下、エレベーターの昇降路だけをくり抜いてある (`boxWithout`)。奥に何かを作る時は、くり抜いてから、内向きの壁を置く。
 - 雨だれなどの汚れは、透ける板を面の数 mm 手前に貼っている (`depthWrite: false`)。
+- 映り込みが無い金属は、黒い板に見える。main.js で、metalness が 0.5 以上の物に、ぼんやりした部屋の景色 (`RoomEnvironment`) の映り込みを弱く付けている。新しく作った金属も、作るのが main.js のこの処理より前なら付く。
+- 電車の窓ガラスと車内の金属・白い壁は、走り出して 0.4秒後に1両目の真ん中から車内を撮り (`train.capture`)、その映り込みを使う。夜の窓に、車内が映る。
+- コンビニの中の白い物や品物は、暗い道から明るく見えるように、少し自分で光らせている (`emissive`)。
 - この Mac では、dev サーバーにファイルの変更の知らせ (fsevents) が届かず、古い中身を返し続けていた。`vite.config.js` で、0.3秒ごとに見に行く形 (`usePolling`) にしてある。
   - それでも古い中身が返る時は、`main.js?v=1` のようにクエリを付けると新しい中身が返る。Chrome で `/ashioto/style.css` を開き、`index.html` の script の src を `/ashioto/main.js?v=1` に書き換えて `document.write` すると、そのまま遊べる。
 - Claude in Chrome から開いたタブでは、マウスのロックが取れない (`WrongDocumentError`)。ロックが効いた時の動きは、`HTMLCanvasElement.prototype.requestPointerLock` と `document.pointerLockElement` を差し替え、`pointerlockchange` を自分で投げて確かめる。

@@ -277,10 +277,6 @@ const homeStation = buildStation(
 )
 // 家に帰る電車。走っている間は、ほかの物から遠い RIDE に置いて、窓の外の景色を流す
 const train = buildTrain(scene, building)
-// 電車の外側の映り込み。部屋の明かりを写した、ぼんやりした景色を使う
-const pmrem = new THREE.PMREMGenerator(renderer)
-train.lightOutside(pmrem.fromScene(new RoomEnvironment(), 0.04).texture)
-pmrem.dispose()
 const RIDE = new THREE.Vector3(800, 0, -300)
 const ride = buildRideScenery(scene, RIDE)
 train.place(RIDE)
@@ -311,6 +307,20 @@ const workStation = buildStation(
   },
   building,
 )
+// 金属の映り込み。部屋の明かりを写した、ぼんやりした景色を使う。映り込みが無いと、金属は黒い板に見える。
+// 電車の外側は強さを決めてあるので先に付け、残りの金属 (エレベーターの扉、手すり、柱など) には弱く付ける
+const pmrem = new THREE.PMREMGenerator(renderer)
+const room = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+pmrem.dispose()
+train.lightOutside(room)
+scene.traverse((o) => {
+  if (!o.isMesh) return
+  ;[o.material].flat().forEach((m) => {
+    if (!m.isMeshStandardMaterial || m.envMap || m.metalness < 0.5) return
+    m.envMap = room
+    m.envMapIntensity = 0.25
+  })
+})
 // 走っている時の速さ (m/秒) と、ブレーキをかけてから止まるまでの長さ (m)
 const CRUISE = 22
 const BRAKE = 90
