@@ -11,7 +11,14 @@ export const createLightPool = (scene, fixtures, count = 8) => {
     scene.add(light)
     return light
   })
-  const scored = fixtures.map((f) => ({ f, d: 0 }))
+  let scored = fixtures.map((f) => ({ f, d: 0 }))
+
+  /**
+   * 照明の並びを入れかえる (いじるモードで、明かりを動かした時)
+   */
+  const setFixtures = (list) => {
+    scored = list.map((f) => ({ f, d: 0 }))
+  }
 
   /**
    * 目に近い照明から順に、光を割り当てる
@@ -35,5 +42,5 @@ export const createLightPool = (scene, fixtures, count = 8) => {
     })
   }
 
-  return { update }
+  return { update, setFixtures }
 }

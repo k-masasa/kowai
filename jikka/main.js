@@ -1,8 +1,11 @@
 import * as THREE from 'three'
 import './style.css'
-import { buildHouse } from './house.js'
+import { applyEdits, createEditor } from './editor.js'
+import { createHouse } from './house.js'
+import { PROPS, ROOMS, WALLS } from './layout.js'
 import { createLightPool } from './lights.js'
 import { makeMaterials } from './materials.js'
+import { createProps } from './props.js'
 import { buildSite } from './site.js'
 import { createSound } from './sound.js'
 import { skyTexture } from './textures.js'
@@ -10,7 +13,7 @@ import { createWalker } from './walk.js'
 
 // じっか
 // 田んぼの中の古い家と、そのまわりを歩く。いまは間取りを確かめるための形だけで、怖いことはまだ起きない。
-// 操作と歩き心地は、あしおとと同じにしている。
+// 操作と歩き心地は、あしおとと同じにしている。E で「いじるモード」になり、家具や戸口をその場で変えられる。
 // 単位は m。x は東西 (東が +)、z は南北 (南が +)、y は高さ。家の東を、南北に道が通っている
 
 const EYE = 1.55
@@ -64,10 +67,19 @@ scene.add(sun, sun.target)
 
 const mats = makeMaterials()
 const site = buildSite(scene, mats)
-const house = buildHouse(scene, mats)
-const walker = createWalker([...site.walls, ...house.walls], [...site.floors, ...house.floors])
-const places = [...house.places, ...site.places]
-const pool = createLightPool(scene, [...house.fixtures, ...site.fixtures], 8)
+// 家と家具は、いじるモードで変えるたびに組み直す。歩く処理には、組み直した中身を同じ並びに入れ直して渡す
+const base = { rooms: ROOMS, walls: WALLS, props: PROPS }
+const house = createHouse(scene, mats)
+const props = createProps(scene, mats)
+const walls = []
+const floors = []
+const places = []
+let layout = null
+let houseOut = { walls: [], floors: [], places: [] }
+let propsOut = { items: [], walls: [], fixtures: [] }
+const pending = { house: true, props: true }
+const walker = createWalker(walls, floors)
+const pool = createLightPool(scene, [], 8)
 const sound = createSound()
 
 const S = {
@@ -90,6 +102,63 @@ const S = {
 const keys = new Set()
 
 /**
+ * 書き出しの画面を出す前に、止める (マウスのロックを外しても、一時停止にはしない)
+ */
+const suspend = () => {
+  S.mode = 'export'
+  keys.clear()
+  document.exitPointerLock?.()
+}
+
+/**
+ * 書き出しの画面を閉じたあと、歩くのに戻る
+ */
+const resumeFromExport = () => {
+  S.mode = 'play'
+  if (S.locked) {
+    lockPointer()
+  }
+}
+
+const editor = createEditor({
+  camera,
+  scene,
+  layout: () => layout,
+  items: () => propsOut.items,
+  heightAt: (x, z) => walker.heightAt(x, z),
+  rebuild: (what) => {
+    layout = applyEdits(base, editor.edits())
+    pending.house = pending.house || !!what.house
+    pending.props = pending.props || !!what.props
+  },
+  suspend,
+  resume: () => resumeFromExport(),
+})
+
+/**
+ * 頼まれた分だけ、家と家具を組み直して、歩く処理・明かり・場所の名前に入れ直す
+ */
+const refresh = () => {
+  layout = applyEdits(base, editor.edits())
+  if (pending.house) {
+    houseOut = house.build(layout)
+  }
+  if (pending.props) {
+    propsOut = props.build(layout.props)
+  }
+  pending.house = false
+  pending.props = false
+  walls.length = 0
+  walls.push(...site.walls, ...houseOut.walls, ...propsOut.walls)
+  floors.length = 0
+  floors.push(...site.floors, ...houseOut.floors)
+  places.length = 0
+  places.push(...houseOut.places, ...site.places)
+  pool.setFixtures([...propsOut.fixtures, ...site.fixtures])
+}
+refresh()
+
+/**
  * どれかのキーが押されていれば 1、なければ 0
  */
 const pressed = (...codes) => (codes.some((code) => keys.has(code)) ? 1 : 0)
@@ -102,8 +171,12 @@ const velocity = new THREE.Vector3()
  * キーの入力から、進む向きと速さを velocity に入れる
  */
 const keyVelocity = (dt) => {
-  S.yaw += (pressed('ArrowLeft') - pressed('ArrowRight')) * 1.8 * dt
-  const f = pressed('KeyW', 'ArrowUp') - pressed('KeyS', 'ArrowDown')
+  // いじるモードの間は、矢印キーは物を動かすのに使う
+  const arrows = editor.isOn() ? 0 : 1
+  S.yaw += (pressed('ArrowLeft') - pressed('ArrowRight')) * arrows * 1.8 * dt
+  const f =
+    Math.max(pressed('KeyW'), pressed('ArrowUp') * arrows) -
+    Math.max(pressed('KeyS'), pressed('ArrowDown') * arrows)
   const s = pressed('KeyD') - pressed('KeyA')
   forward.set(-Math.sin(S.yaw), 0, -Math.cos(S.yaw))
   side.set(Math.cos(S.yaw), 0, -Math.sin(S.yaw))
@@ -156,7 +229,7 @@ const updatePlace = () => {
     (p) => S.pos.x >= p.x0 && S.pos.x <= p.x1 && S.pos.z >= p.z0 && S.pos.z <= p.z1,
   )
   const name = at ? at.name : ''
-  const inside = house.places.includes(at)
+  const inside = houseOut.places.includes(at)
   if (inside !== S.inside) {
     S.inside = inside
     sound.setWind(inside ? WIND_IN : WIND_OUT)
@@ -247,6 +320,9 @@ const timer = new THREE.Timer()
 const tick = (time) => {
   timer.update(time)
   const dt = Math.min(timer.getDelta(), 0.05)
+  if (pending.house || pending.props) {
+    refresh()
+  }
   if (S.mode === 'play') {
     move(dt)
     updatePlace()
@@ -254,12 +330,26 @@ const tick = (time) => {
     S.walking = false
   }
   placeCamera(dt)
+  editor.update()
   followSun()
   pool.update(camera.position)
   renderer.render(scene, camera)
 }
 
-addEventListener('keydown', (e) => keys.add(e.code))
+addEventListener('keydown', (e) => {
+  if (S.mode !== 'play') return
+  if (e.code === 'KeyE') {
+    if (!e.repeat) {
+      editor.toggle()
+    }
+    return
+  }
+  if (editor.key(e)) {
+    e.preventDefault()
+    return
+  }
+  keys.add(e.code)
+})
 addEventListener('keyup', (e) => keys.delete(e.code))
 addEventListener('blur', () => keys.clear())
 
@@ -269,6 +359,12 @@ document.addEventListener('mousemove', (e) => {
   if (!locked && !(e.buttons & 1)) return
   S.yaw -= e.movementX * 0.0022
   S.pitch = THREE.MathUtils.clamp(S.pitch - e.movementY * 0.0022, -1.2, 1.2)
+})
+
+// いじるモードでは、クリックで、画面の真ん中に写っている物を選ぶ
+document.addEventListener('mousedown', (e) => {
+  if (S.mode !== 'play' || e.button !== 0) return
+  editor.click()
 })
 
 document.addEventListener('pointerlockchange', () => {
@@ -296,6 +392,9 @@ if (import.meta.env.DEV) {
     renderer,
     scene,
     camera,
+    editor,
+    layout: () => layout,
+    props: () => propsOut,
     start: () => begin(false),
     tp: (x, z, yaw = S.yaw) => {
       S.pos.x = x

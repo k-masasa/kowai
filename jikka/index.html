@@ -13,11 +13,29 @@
         <button id="start">はじめる</button>
       </div>
       <p class="note">
-        WASD で歩く / Shift で走る / マウスで見る<br />音が出ます。ヘッドホンをおすすめします。
+        WASD で歩く / Shift で走る / マウスで見る / E で家具や戸口をいじる<br />音が出ます。ヘッドホンをおすすめします。
       </p>
     </div>
     <div id="pause" class="overlay hidden">
       <p class="start">クリックで戻る</p>
+    </div>
+    <div id="edit" class="hidden">
+      <p class="edit-title">いじるモード</p>
+      <p id="edit-target"></p>
+      <p id="edit-hover"></p>
+      <p id="edit-help"></p>
+      <p class="edit-common">Z 1つ戻す / X 書き出す / E 歩くのに戻る</p>
+      <p id="edit-say"></p>
+    </div>
+    <div id="cross" class="hidden"></div>
+    <div id="export" class="overlay hidden">
+      <p id="export-note">下の文字を全部コピーして、Claude に貼ってください。</p>
+      <textarea id="export-text" readonly></textarea>
+      <div id="export-buttons">
+        <button id="export-copy">コピーする</button>
+        <button id="export-close">閉じて、いじるのに戻る</button>
+        <button id="export-reset">変えた所を全部消して、元に戻す</button>
+      </div>
     </div>
     <p id="place"></p>
     <script type="module" src="./main.js"></script>
