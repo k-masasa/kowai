@@ -20,6 +20,7 @@ import {
 } from './building.js'
 import { createLightPool } from './lights.js'
 import { createFigure } from './figure.js'
+import { createCrawler, createHand } from './ghosts.js'
 import { createCrowd, v3 } from './crowd.js'
 import { createPerson } from './people.js'
 import { createSound } from './sound.js'
@@ -56,8 +57,7 @@ const WALKER_GAP = [26, 22]
 // start: 追いかけの最初の距離、walk: 見ていない間の速さ、rush: 停電の間の速さ
 // gap: 停電の間隔 (遠い時、近い時)、dark: 停電の長さ (最短、ばらつき)、flash: 懐中電灯の明るさ
 // strict: 階段を下り続けると死ぬか、repeat: 1日のうちに、上がったはずが同じ階に出る回数
-// events: たまに起こる出来事。torch (懐中電灯が切れる) と peek (窓から覗く) は間隔 (最短、ばらつき) の秒数、
-// knob (ドアノブが鳴る) は、ドアの目の前まで来た時に鳴る確率
+// events: たまに起こる出来事。torch (懐中電灯が切れる) と peek (階段室の窓から覗く) は、間隔 (最短、ばらつき) の秒数
 const NORMAL = {
   days: 1,
   start: 9.5,
@@ -68,7 +68,7 @@ const NORMAL = {
   flash: 5.5,
   strict: true,
   repeat: 2,
-  events: { torch: [15, 15], knob: 0.1, peek: [10, 10] },
+  events: { torch: [15, 15], peek: [10, 10] },
 }
 const LEVELS = {
   easy: {
@@ -88,9 +88,7 @@ const LEVELS = {
   hard: { ...NORMAL, days: 3 },
 }
 
-// ドアノブが鳴ったあと、次に鳴れるようになるまでの秒数
-const KNOB_REST = 40
-// ドアノブを押し下げる時刻 (秒)。1回試して、少し間を空けて何度か
+// 屋上の扉のノブを鳴らす時刻 (秒)。1回試して、少し間を空けて何度か
 const KNOB_BEATS = [0, 0.5, 0.64, 0.78, 1.3, 1.44]
 const KNOB_LEN = 1.6
 
@@ -136,9 +134,9 @@ const dayState = () => ({
   onTop: false,
   loops: 0,
   repeatAt: [],
-  // 西の階段をふさいである階。この階で、廊下を通って東の階段に移る。廊下の途中で、少し開いているドア
+  // 西の階段をふさいである階。この階で、廊下を通って東の階段に移る。その廊下で、前から這ってくるお化け
   cross: 0,
-  ajar: null,
+  crossChase: null,
   looping: false,
   loopFloor: 0,
   aheadFloor: 0,
@@ -149,12 +147,13 @@ const dayState = () => ({
   darkFor: 0,
   beatIn: 0,
   moved: 0,
+  // 最後の追いかけで、這うものが這った歩数
+  gait: 0,
   back: 0,
   slamFor: 0,
   torchIn: 0,
   torchWarn: 0,
   torchOff: 0,
-  knobIn: 0,
   peekIn: 0,
   peekFor: 0,
   peekSeen: 0,
@@ -384,6 +383,24 @@ const crowd = createCrowd(22)
 const seeker = createFigure()
 seeker.group.visible = false
 scene.add(seeker.group)
+// 人の形をしていないお化け (這うもの)。東の階段へ移る階の廊下で前から這ってきて、そのまま追いかけてくる。
+// 20階では、うしろから来る
+const crawler = createCrawler()
+crawler.group.visible = false
+scene.add(crawler.group)
+// 東の階段へ移る階の、廊下の腰壁を外からつかんでいる手。近づくと、手を放して下へ消える
+// 肌は、壁の色と見分けがつくように、青白く、少し光らせる
+const handSkin = new THREE.MeshStandardMaterial({
+  color: 0xdfe3dc,
+  emissive: 0x30332f,
+  roughness: 0.8,
+})
+const hands = Array.from({ length: 8 }, () => {
+  const mesh = createHand(handSkin)
+  mesh.visible = false
+  scene.add(mesh)
+  return { mesh, drop: -1 }
+})
 const sound = createSound()
 const homeDoor = building.doors.find((d) => d.home)
 const eye = new THREE.Vector3()
@@ -577,13 +594,7 @@ const resetWorld = () => {
   building.doors.forEach((d) => {
     d.hinge.rotation.y = 0
     d.lever.rotation.z = 0
-    d.rattle = 0
-    d.tried = false
   })
-  // 東の階段へ移る階の廊下の、真ん中あたりのドアが1つ、少し開いている
-  const ajarIdx = 4 + Math.floor(Math.random() * 4)
-  S.ajar = building.doors.find((d) => d.floor === S.cross && d.idx === ajarIdx)
-  S.ajar.hinge.rotation.y = -0.32
   building.room.visible = false
   building.signs.forEach((sign) => sign.draw(sign.label))
   building.fixtures.forEach((f, i) => {
@@ -595,6 +606,9 @@ const resetWorld = () => {
   building.homeGlass.mesh.material = building.homeGlass.normal
   crowd.releaseAll()
   scene.add(figure.group)
+  crawler.group.visible = false
+  crawler.reset()
+  placeHands()
   placeStart(S.from)
   closeLift()
   seeker.group.visible = false
@@ -1445,7 +1459,10 @@ const updateFollower = (dt) => {
   if (!F || S.final) return
   const fo = S.follow
   if (!fo) {
-    if (S.followDone || S.tag !== `A${F}` || S.trailLen < 7) return
+    // 決めた階から上がり始めたら出す。追いかけられていて出せなかった時は、2階上までのうちに出す
+    const m = /^A(\d+)$/.exec(S.tag)
+    const n = m ? Number(m[1]) : 0
+    if (S.followDone || n < F || n > F + 2 || S.trailLen < 7 || S.hunted) return
     if (S.walker) hideWalker()
     startFollower()
     return
@@ -1578,25 +1595,20 @@ const resume = () => {
 }
 
 /**
- * 画面から離れていた分、何かが進んでいる
+ * 画面から離れていた分、何かが進んでいる。最後の追いかけの途中なら、うしろの這うものが近づいている
  */
 const applyAway = () => {
   S.awayPending = false
   if (level() < 1) return
   whisper('どこに行ってたの？')
   sound.whisper()
-  if (S.final) {
-    const fig = figure.group.position
-    const d = flat(fig, S.pos)
-    const pull = Math.min(4, Math.max(d - 2.2, 0))
-    fig.x += ((S.pos.x - fig.x) / d) * pull
-    fig.z += ((S.pos.z - fig.z) / d) * pull
-    return
-  }
-  const door = building.doors.find(
-    (d) => !d.home && Math.abs(d.y - S.feet) < 1 && flat(d, S.pos) < 6 && d.hinge.rotation.y === 0,
-  )
-  if (door) door.hinge.rotation.y = -0.45
+  if (!S.final) return
+  // 最後の追いかけの途中なら、うしろの這うものが近づいている
+  const fig = crawler.group.position
+  const d = flat(fig, S.pos)
+  const pull = Math.min(4, Math.max(d - 3.4, 0))
+  fig.x += ((S.pos.x - fig.x) / d) * pull
+  fig.z += ((S.pos.z - fig.z) / d) * pull
 }
 
 /**
@@ -1712,6 +1724,13 @@ const onStairs = () => {
     p.y -= FH
   })
   if (S.follow) S.follow.m.p.group.position.y -= FH
+  const cc = S.crossChase
+  if (cc && cc.path) {
+    cc.path.pts.forEach((p) => {
+      p.y -= FH
+    })
+    crawler.group.position.y -= FH
+  }
   if (S.ahead) figure.group.position.y -= FH
   if (S.walker) {
     S.walker.path.forEach((p) => {
@@ -1741,21 +1760,26 @@ const reachTop = () => {
 }
 
 /**
- * 最後の追いかけ。うしろの東の階段の扉が閉まり、廊下のうしろに顔の無い人が立つ。どちらの階段室へも、もう出られない
+ * 最後の追いかけ。うしろの東の階段の扉が閉まり、廊下のうしろに、移る階で追いかけてきた這うものがいる。
+ * どちらの階段室へも、もう出られない
  */
 const startChase = () => {
   if (S.lift) endLift()
+  if (S.crossChase && S.crossChase.phase !== 'done') endCrossChase()
   S.final = true
   building.zones.forEach((z) => {
     if (z.tag === `D${FLOORS}`) z.on = false
   })
   S.slamFor = 0.35
   sound.slam(0.6)
-  const x = Math.min(CX1 - 0.3, S.pos.x + S.level.start)
-  figure.group.position.set(x, floorY(FLOORS), -0.7)
-  figure.randomPose(0)
-  figure.face(S.pos)
-  figure.group.visible = true
+  // 頭 (体の向きの前 1.3m) が、決めた距離だけうしろに来るように置く
+  const x = Math.min(CX1 - 0.4, S.pos.x + S.level.start + 1.3)
+  crawler.reset()
+  crawler.group.position.set(x, floorY(FLOORS), -0.7)
+  crawler.group.rotation.set(0, 0, 0)
+  crawler.face(S.pos)
+  crawler.randomPose(0)
+  crawler.group.visible = true
   S.flickerIn = 3
   S.darkFor = 0
   console.log('%cうしろ', 'color:#a33;font-size:13px')
@@ -1942,14 +1966,36 @@ const faceToFace = () => {
 }
 
 /**
- * つかまった。振り向かせて、目の前に顔を出す
+ * つかまった。振り向かせて、目の前に這うものの顔を出す
  */
 const caught = () => {
-  const fig = figure.group.position
-  S.yaw = Math.atan2(-(fig.x - S.pos.x), -(fig.z - S.pos.z))
+  crawlerHead(crawlHead)
+  S.yaw = Math.atan2(-(crawlHead.x - S.pos.x), -(crawlHead.z - S.pos.z))
   S.pitch = 0.04
   die('あなたの歩き方を、おぼえました。', 0.9)
-  faceToFace()
+  crawlerToFace()
+}
+
+const scareAt = new THREE.Vector3()
+
+/**
+ * 目の前に、立ち上がった這うものを置く。口の開いた頭が、ちょうど目の前に来るように
+ */
+const crawlerToFace = () => {
+  const g = crawler.group
+  const fx = -Math.sin(S.yaw)
+  const fz = -Math.cos(S.yaw)
+  crawler.scarePose()
+  g.rotation.set(0, 0, 0)
+  g.position.set(S.pos.x + fx * 1.3, S.feet, S.pos.z + fz * 1.3)
+  crawler.face(S.pos)
+  g.updateMatrixWorld(true)
+  crawler.head.getWorldPosition(scareAt)
+  g.position.x += S.pos.x + fx * 0.5 - scareAt.x
+  g.position.y += S.feet + EYE - scareAt.y
+  g.position.z += S.pos.z + fz * 0.5 - scareAt.z
+  g.visible = true
+  sound.scare()
 }
 
 /**
@@ -2013,22 +2059,287 @@ const updateWrongWay = (dt) => {
 }
 
 /**
- * 西の階段がふさがっている階。初めて着いた時に、東の階段へ行くように知らせる。
- * 廊下の途中の少し開いているドアは、近くまで来ると、勢いよく閉まる
+ * 東の階段へ移る階の廊下に、腰壁を外からつかんでいる手を置く。2本ずつ、間を空けて4組。少し大きい
  */
-const updateCrossing = () => {
+const placeHands = () => {
+  const y = floorY(S.cross) + 1.15
+  let x = 11.5 + Math.random() * 1.5
+  hands.forEach((h, k) => {
+    h.mesh.position.set(x, y, 0.17)
+    h.mesh.rotation.set(0, (Math.random() - 0.5) * 0.4, 0)
+    // 2本のうち片方は、左手 (裏返す)
+    h.mesh.scale.set(k % 2 ? -1.3 : 1.3, 1.3, 1.3)
+    h.mesh.visible = true
+    h.drop = -1
+    x += k % 2 === 0 ? 0.4 + Math.random() * 0.2 : 2.2 + Math.random() * 1.6
+  })
+}
+
+/**
+ * 腰壁をつかむ手。近づくと、手を放して下へ消える。前から這ってくるものが出たら、残りも全部放す
+ */
+const updateHands = (dt) => {
+  const here = S.tag === `C${S.cross}`
+  hands.forEach((h) => {
+    if (!h.mesh.visible) return
+    if (h.drop < 0) {
+      const near = here && Math.abs(S.pos.x - h.mesh.position.x) < 2.8
+      if (!near && !S.crossChase) return
+      h.drop = 0
+      sound.step(0.1, { muffle: 0.75 })
+    }
+    h.drop += dt
+    h.mesh.position.y -= dt * 2.6
+    if (h.drop > 0.4) h.mesh.visible = false
+  })
+}
+
+/**
+ * 道すじを1つ作る。start から始まり、あとで pathPush で点を足していく
+ */
+const makePath = (start) => ({ pts: [{ x: start.x, y: start.y, z: start.z, at: 0 }], len: 0 })
+
+/**
+ * 道すじに点を足す。前の点から 0.2m 以上離れた時だけ
+ */
+const pathPush = (path, x, y, z) => {
+  const last = path.pts[path.pts.length - 1]
+  const d = Math.hypot(x - last.x, z - last.z)
+  if (d < 0.2) return
+  path.len += d
+  path.pts.push({ x, y, z, at: path.len })
+}
+
+/**
+ * 道すじの、道のり at の場所を out に入れる。道すじの外なら、端の場所
+ */
+const pathAt = (path, at, out) => {
+  const t = path.pts
+  for (let i = t.length - 1; i > 0; i--) {
+    const a = t[i - 1]
+    if (a.at > at) continue
+    const b = t[i]
+    const k = Math.min(1, (at - a.at) / Math.max(b.at - a.at, 0.0001))
+    return out.set(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, a.z + (b.z - a.z) * k)
+  }
+  return out.set(t[0].x, t[0].y, t[0].z)
+}
+
+const crawlAhead = new THREE.Vector3()
+const crawlHead = new THREE.Vector3()
+
+/**
+ * 這うものの頭の場所を out に入れる。体の向きの前、1.3m ほど先
+ */
+const crawlerHead = (out) => {
+  const g = crawler.group
+  return out.set(
+    g.position.x + Math.sin(g.rotation.y) * 1.3,
+    g.position.y + 0.7,
+    g.position.z + Math.cos(g.rotation.y) * 1.3,
+  )
+}
+
+/**
+ * 這うものの足音。手足4本で、ひたひたと鳴る
+ */
+const crawlSound = (d) => {
+  sound.step(THREE.MathUtils.clamp(1.8 / (1 + d), 0.06, 0.6), { muffle: 0.15 })
+}
+
+/**
+ * 東の階段へ移る階の廊下を、半分くらいまで来た。先の明かりがちらついて、その下に這うものがいる。その奥は暗い
+ */
+const startCrossChase = () => {
+  if (S.walker) hideWalker()
+  // 10m ほど先の明かりの下に出す。その先の明かりは、もう消えている
+  const lamps = building.fixtures
+    .filter((f) => f.corridor === S.cross)
+    .sort((a, c) => a.unit - c.unit)
+  const spot = lamps.find((f) => f.pos.x > S.pos.x + 9) || lamps[lamps.length - 1]
+  lamps.forEach((f) => {
+    if (f.unit > spot.unit) f.on = false
+  })
+  spot.on = true
+  spot.stutter = 0.8
+  S.crossChase = { phase: 'appear', t: 0, next: spot.unit, speed: 0, gait: 0, step: 0 }
+  crawler.reset()
+  crawler.group.position.set(spot.pos.x + 0.8, floorY(S.cross), -0.7)
+  crawler.group.rotation.set(0, -Math.PI / 2, 0)
+  crawler.randomPose(0.3)
+  crawler.group.visible = true
+  sound.flicker()
+  sound.suzu(0.14)
+}
+
+/**
+ * 移る階の廊下の明かりを、元に戻す
+ */
+const restoreCrossLights = () => {
+  building.fixtures.forEach((f, i) => {
+    if (f.corridor === S.cross) f.on = lightsAtStart[i].on
+  })
+}
+
+/**
+ * 這うものに追いつかれた。振り向かせて、目の前に這うものの顔を出す
+ */
+const crossDeath = () => {
+  crawlerHead(crawlHead)
+  S.yaw = Math.atan2(-(crawlHead.x - S.pos.x), -(crawlHead.z - S.pos.z))
+  S.pitch = 0.02
+  S.hunted = false
+  die('すぐうしろまで、這ってきていました。', 0.7)
+  crawlerToFace()
+}
+
+/**
+ * 這うものが消える。30秒逃げきったか、かんたんで追いつかれた時
+ */
+const endCrossChase = () => {
+  const cc = S.crossChase
+  cc.phase = 'done'
+  crawler.group.visible = false
+  crawler.group.rotation.x = 0
+  S.hunted = false
+  S.noise = 0
+  restoreCrossLights()
+  sound.flicker()
+}
+
+/**
+ * 移る階の廊下の、前から這ってくるもの。先の明かりの下からこちらへ這ってきて、通り過ぎた明かりは消えていく。
+ * 目の前まで来ると明かりが消えて、点き直すと、すり抜けてうしろにいる。そこから30秒、歩いた道すじをたどって
+ * 追いかけてくる。歩くより速く、走るより少し遅い。かんたんでは、追いつかれても消えるだけ
+ */
+const updateCrossChase = (dt) => {
+  const cc = S.crossChase
+  if (!cc || cc.phase === 'done') return
+  cc.t += dt
+  const y = floorY(S.cross)
+  const g = crawler.group
+  if (cc.phase === 'appear') {
+    // 少しのあいだ、明かりの下で、こちらを向いている
+    crawler.face(S.pos)
+    if (cc.t < 1.4) return
+    cc.phase = 'rush'
+    cc.t = 0
+    sound.whisper()
+    return
+  }
+  if (cc.phase === 'rush') {
+    // 通り過ぎた明かりは、うしろから消えていく
+    for (;;) {
+      const lamp = building.fixtures.find((f) => f.corridor === S.cross && f.unit === cc.next)
+      if (!lamp || lamp.pos.x < g.position.x + 1.6) break
+      lamp.on = false
+      sound.click()
+      cc.next -= 1
+    }
+    // こちらへ向かって、だんだん速く這ってくる
+    cc.speed = Math.min(6, 1.2 + cc.t * 3)
+    crawler.face(S.pos)
+    const d = flat(g.position, S.pos)
+    const move = Math.min(cc.speed * dt, Math.max(0, d - 1.2))
+    g.position.x += ((S.pos.x - g.position.x) / d) * move
+    g.position.z += ((S.pos.z - g.position.z) / d) * move
+    cc.gait += move / 0.9
+    crawler.crawl(cc.gait, 0.32)
+    cc.step += move
+    if (cc.step > 0.45) {
+      cc.step = 0
+      crawlSound(d)
+    }
+    if (d - 1.2 > 0.25) return
+    // 目の前で、明かりが消える
+    cc.phase = 'black'
+    cc.t = 0
+    setDark(true)
+    g.visible = false
+    sound.scare()
+    sound.suzu(0.3)
+    return
+  }
+  if (cc.phase === 'black') {
+    if (cc.t < 0.75) return
+    // 点き直すと、すり抜けて、うしろ (西) にいる
+    setDark(false)
+    const x = Math.max(HX1 + 0.3, S.pos.x - 6)
+    g.position.set(x, y, -0.7)
+    crawler.face(S.pos)
+    crawler.randomPose(0.6)
+    g.visible = true
+    cc.phase = 'chase'
+    // 這い出す前に、少しだけ間がある
+    cc.t = -0.6
+    cc.path = makePath(g.position)
+    pathPush(cc.path, S.pos.x, S.feet, S.pos.z)
+    cc.along = 0
+    S.hunted = true
+    whisper('走って。')
+    sound.heartbeat(0.6)
+    return
+  }
+  // 追いかけてくる
+  pathPush(cc.path, S.pos.x, S.feet, S.pos.z)
+  if (cc.t < 0) {
+    crawler.face(S.pos)
+    return
+  }
+  cc.speed = 2.0 * Math.min(1, 0.4 + cc.t)
+  const before = cc.along
+  cc.along = Math.min(cc.path.len, cc.along + cc.speed * dt)
+  pathAt(cc.path, cc.along, g.position)
+  pathAt(cc.path, Math.min(cc.path.len, cc.along + 0.6), crawlAhead)
+  const across = Math.hypot(crawlAhead.x - g.position.x, crawlAhead.z - g.position.z)
+  if (across > 0.01) {
+    g.rotation.y = Math.atan2(crawlAhead.x - g.position.x, crawlAhead.z - g.position.z)
+    // 階段では、体を坂に合わせて傾ける
+    g.rotation.x = THREE.MathUtils.clamp(
+      -Math.atan2(crawlAhead.y - g.position.y, across),
+      -0.6,
+      0.6,
+    )
+  }
+  const moved = cc.along - before
+  cc.gait += moved / 0.9
+  crawler.crawl(cc.gait, 0.32)
+  const d = Math.hypot(g.position.x - S.pos.x, g.position.y - S.feet, g.position.z - S.pos.z)
+  cc.step += moved
+  if (cc.step > 0.45) {
+    cc.step = 0
+    crawlSound(d)
+  }
+  S.beatIn -= dt
+  if (S.beatIn <= 0) {
+    S.beatIn = 0.45
+    sound.heartbeat(0.5)
+  }
+  // 頭が追いついたら、つかまる
+  if (cc.path.len - cc.along < 1.5 || d < 1.2) {
+    if (S.level.events) {
+      crossDeath()
+      return
+    }
+    endCrossChase()
+    return
+  }
+  if (cc.t > 30 || S.onTop) endCrossChase()
+}
+
+/**
+ * 西の階段がふさがっている階。初めて着いた時に、東の階段へ行くように知らせる。
+ * 廊下には腰壁をつかむ手があり、半分くらいまで来ると、前から這うものが来る
+ */
+const updateCrossing = (dt) => {
   const f = S.cross
   if (!S.hinted.cross && S.tag === `L${f}` && S.pos.x < HX1) {
     S.hinted.cross = true
     whisper('この先は、工事中。東側の階段へ。', 3600)
   }
-  const d = S.ajar
-  if (!d || S.tag !== `C${f}` || Math.abs(S.pos.x - d.x) > 2.6) return
-  S.ajar = null
-  d.hinge.rotation.y = 0
-  sound.slam(0.55)
-  const lamp = building.fixtures.find((l) => l.corridor === f && l.unit === d.idx)
-  if (lamp) lamp.stutter = 0.5
+  updateHands(dt)
+  if (!S.crossChase && S.tag === `C${f}` && S.pos.x > 26 && !S.final) startCrossChase()
+  updateCrossChase(dt)
 }
 
 /**
@@ -2222,12 +2533,28 @@ const inView = () => {
   return frustum.intersectsSphere(sphere)
 }
 
+const bodySphere = new THREE.Sphere(new THREE.Vector3(), 0.8)
+
 /**
- * 顔の無い人の、今の速さ。明かりが消えている間は速く、見られている間は止まる
+ * 這うものが、画面に写っているか。体の真ん中 (頭とうしろ足のあいだ) で見る
+ */
+const crawlerInView = () => {
+  updateFrustum()
+  const g = crawler.group
+  bodySphere.center.set(
+    g.position.x + Math.sin(g.rotation.y) * 0.7,
+    g.position.y + 0.6,
+    g.position.z + Math.cos(g.rotation.y) * 0.7,
+  )
+  return frustum.intersectsSphere(bodySphere)
+}
+
+/**
+ * 最後の追いかけの、這うものの今の速さ。明かりが消えている間は速く、見られている間は止まる
  */
 const chaseSpeed = () => {
   if (S.dark) return S.level.rush
-  if (inView()) return 0
+  if (crawlerInView()) return 0
   return S.level.walk
 }
 
@@ -2240,7 +2567,7 @@ const flickers = (dt, near) => {
     S.darkFor -= dt
     if (S.darkFor > 0) return
     setDark(false)
-    figure.randomPose(near)
+    crawler.randomPose(near)
     return
   }
   S.flickerIn -= dt
@@ -2263,30 +2590,34 @@ const heartbeat = (dt, near) => {
 }
 
 /**
- * 追いかけの1フレーム分
+ * 最後の追いかけの1フレーム分。見ていない間は這ってきて、見ると止まる。止まるたびに、姿勢が変わっている
  */
 const updateChase = (dt) => {
   if (!S.final) return
-  const fig = figure.group.position
-  const d = flat(fig, S.pos)
-  if (d < 0.75) {
+  const fig = crawler.group.position
+  const full = flat(fig, S.pos)
+  // 頭までの距離。頭は、体の向きの前 1.3m
+  const d = full - 1.3
+  if (d < 0.45) {
     caught()
     return
   }
   const near = THREE.MathUtils.clamp(1 - d / 12, 0, 1)
   flickers(dt, near)
   const speed = chaseSpeed()
+  crawler.face(S.pos)
   if (speed > 0) {
-    const stepLen = Math.min(speed * dt, d - 0.3)
-    fig.x += ((S.pos.x - fig.x) / d) * stepLen
-    fig.z += ((S.pos.z - fig.z) / d) * stepLen
+    const stepLen = Math.min(speed * dt, Math.max(0, d - 0.3))
+    fig.x += ((S.pos.x - fig.x) / full) * stepLen
+    fig.z += ((S.pos.z - fig.z) / full) * stepLen
+    S.gait += stepLen / 0.9
+    crawler.crawl(S.gait, 0.32)
     S.moved += stepLen
-    if (S.moved > 0.75) {
+    if (S.moved > 0.45) {
       S.moved = 0
       sound.step(THREE.MathUtils.clamp(2.4 / (d + 1), 0.08, 0.8), { muffle: 0.3 })
     }
   }
-  figure.face(S.pos)
   heartbeat(dt, near)
   sound.setDrone(0.25 + near * 0.75)
 }
@@ -2370,7 +2701,7 @@ const closeLift = () => {
  */
 const endLift = () => {
   closeLift()
-  if (!S.final) figure.group.visible = false
+  figure.group.visible = false
   S.lift = null
 }
 
@@ -2502,44 +2833,8 @@ const updateTorch = (dt) => {
   flashlight.intensity = power
 }
 
-const knobPoint = new THREE.Vector3()
-
 /**
- * ふつう以上では、目の前まで来たドアのノブが、たまにガチャガチャ回る。
- * 1つのドアで試すのは、前に来るたびに1回だけ。鳴ったあとは、しばらく鳴らない
- */
-const updateKnob = (dt) => {
-  const ev = S.level.events
-  if (!ev) return
-  S.knobIn -= dt
-  updateFrustum()
-  building.doors.forEach((d) => {
-    const near =
-      !d.home && Math.abs(d.y - S.feet) < 1 && Math.abs(S.pos.x - d.x) < 0.7 && S.pos.z - d.z < 1.3
-    if (!near) {
-      d.tried = false
-      return
-    }
-    if (d.tried) return
-    knobPoint.set(d.x + 0.33, d.y + 1.0, d.z)
-    if (!frustum.containsPoint(knobPoint)) return
-    d.tried = true
-    if (S.knobIn > 0 || d.hinge.rotation.y !== 0) return
-    if (Math.random() > ev.knob) {
-      if (Math.random() < 0.06) {
-        sound.chime()
-        S.knobIn = KNOB_REST
-      }
-      return
-    }
-    d.rattle = KNOB_LEN
-    sound.rattle(KNOB_BEATS)
-    S.knobIn = KNOB_REST
-  })
-}
-
-/**
- * ふつう以上では、見ていない間に窓の向こうに人が立つ。見つかると少しして消える
+ * ふつう以上では、見ていない間に、階段室の窓の外に人が立つ。見つかると少しして消える
  */
 const updatePeek = (dt) => {
   const ev = S.level.events
@@ -2559,7 +2854,9 @@ const updatePeek = (dt) => {
   }
   S.peekIn -= dt
   if (S.peekIn > 0) return
+  // 覗くのは、階段室の窓だけ (住んでいる人の部屋の窓は使わない)
   const win = building.windows.find((w) => {
+    if (w.floor % 1 === 0) return false
     const d = w.pos.distanceTo(eye)
     if (Math.abs(w.pos.y - eye.y) > 1.6) return false
     return d > 3 && d < 11 && !frustum.containsPoint(w.pos)
@@ -2893,7 +3190,7 @@ const updateWalker = (dt) => {
   const w = S.walker
   if (!w) {
     const pf = stairFloor()
-    if (!pf || pf >= FLOORS || S.follow) return
+    if (!pf || pf >= FLOORS || S.follow || S.hunted) return
     S.walkerIn -= dt
     if (S.walkerIn > 0) return
     S.walkerIn = nextIn(WALKER_GAP)
@@ -3169,19 +3466,6 @@ const updateEntrance = (dt) => {
 }
 
 /**
- * ドアノブのガチャガチャの動き。鳴る時刻に合わせて、レバーを押し下げる
- */
-const updateRattle = (dt) => {
-  building.doors.forEach((d) => {
-    if (d.rattle <= 0) return
-    d.rattle = Math.max(0, d.rattle - dt)
-    const t = KNOB_LEN - d.rattle
-    const beat = KNOB_BEATS.find((b) => t >= b && t < b + 0.12)
-    d.lever.rotation.z = beat === undefined ? 0 : Math.sin(((t - beat) / 0.12) * Math.PI) * 0.5
-  })
-}
-
-/**
  * 遊んでいる間の1フレーム分
  */
 const updatePlay = (dt) => {
@@ -3200,12 +3484,11 @@ const updatePlay = (dt) => {
   if (S.mode !== 'play') return
   updateWrongWay(dt)
   if (S.mode !== 'play') return
-  updateCrossing()
+  updateCrossing(dt)
   updateIdle(dt)
   updateNoise(dt)
   if (S.mode !== 'play') return
   updateTorch(dt)
-  updateKnob(dt)
   updatePeek(dt)
   updateWalker(dt)
   updateLampFigure(dt)
@@ -3317,7 +3600,6 @@ const tick = (time) => {
   if (S.mode === 'home') updateHome(dt)
   if (S.mode === 'card') updateCard(dt)
   updateSlam(dt)
-  updateRattle(dt)
   updateEntrance(dt)
   updateClock()
   placeCamera(dt)
@@ -3413,6 +3695,9 @@ if (import.meta.env.DEV) {
     person,
     walker: (force) => spawnWalker(force),
     follower: () => startFollower(),
+    crossChase: () => startCrossChase(),
+    crawler,
+    hands,
     lamp: () => showLampFigure(),
     lift: (floor) => startLift(floor),
     renderer,
