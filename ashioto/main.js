@@ -1895,8 +1895,8 @@ const updateNoise = (dt) => {
 }
 
 /**
- * 通りの歩道に落ちている鈴。近づくと、ひとりでに小さく鳴る。足もとまで来たら拾う。
- * 拾わずに通り過ぎても、いつの間にかポケットに入っている。いわれは、電車の広告 (ホラー映画) で知る
+ * 通りの歩道に落ちている鈴。近づくと、ひとりでに小さく鳴る。足もとまで来ても拾わないが、
+ * 通り過ぎると、いつの間にかポケットに入っている。いわれは、電車の広告 (ホラー映画) で知る
  */
 const updateBell = () => {
   if (S.bell || !S.tag.startsWith('@C')) return
@@ -1906,10 +1906,12 @@ const updateBell = () => {
     S.bellCalled = true
     sound.suzu(0.12)
   }
-  if (d < 1.1) {
-    pickBell('なんだこれ、鈴か。。。拾っとこ。')
-    return
+  // 足もとまで来ても、拾わない (ふつうは拾わない)。気になるだけ
+  if (!S.hinted.bell && d < 1.6) {
+    S.hinted.bell = true
+    whisper('何これ、鈴？', 2400)
   }
+  // 通り過ぎると、拾っていないのに、ポケットに入っている
   if (S.pos.x > at.x + 5) pickBell('あれ、ポケットの中で鈴が鳴った。拾ってないのに。。。')
 }
 
@@ -2322,7 +2324,7 @@ const updateCrossChase = (dt) => {
     pathPush(cc.path, S.pos.x, S.feet, S.pos.z)
     cc.along = 0
     S.hunted = true
-    whisper('やばい、走れ。')
+    whisper('やばい。')
     sound.heartbeat(0.6)
     return
   }
