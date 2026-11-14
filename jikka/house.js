@@ -1,12 +1,15 @@
 import * as THREE from 'three'
 import {
   at,
+  atScaled,
   box,
+  boxWithout,
   flat,
   gableEnd,
   gableRoof,
   makeBuilder,
   makeWalls,
+  slantWall,
   stairs,
   tube,
   wallZ,
@@ -15,21 +18,24 @@ import { bulb, ringLamp } from './lamps.js'
 
 // 家。母屋 (座敷・茶の間・台所・仏間など)、北の家 (1階がものおき)、東の小屋 (ふろ・洗濯機・トイレ)、南の小屋。
 // 住んでいた人の手書きの間取りをもとにしている。分からない所 (2階、部屋の広さ) は仮。
-// 1間 = 1.82 m で組む。母屋は x が -3.64 から 9.7、z が -5.46 から 9.1。玄関は東の道の方を向く
+// 1間 = 1.82 m で組む。母屋は x が -3.64 から 10.3 (玄関の土間の前まで)、z が -5.46 から 9.1。玄関は東の道の方を向く
 
 // 母屋の床、天井、外壁の上の高さ
 const FLOOR = 0.5
 const CEIL = 2.9
+// 台所のコンロの横の、一段下がった所と、洗面所の床の高さ
+const LANDING = 0.3
+const WASH = 0.1
 const WALL_TOP = 3.34
 // 母屋の屋根の軒の高さと、軒から棟までの高さ
-const EAVE = 3.05
-const RISE = 3.4
+const EAVE = 2.68
+const RISE = 3.77
 // 台の脚の太さ
 const LEG = 0.05
 
 const TUB = new THREE.CylinderGeometry(0.42, 0.4, 0.58, 24)
 const TUB_WATER = new THREE.CircleGeometry(0.38, 24)
-const CHABUDAI = new THREE.CylinderGeometry(0.45, 0.45, 0.03, 28)
+const DIAL = new THREE.CylinderGeometry(0.052, 0.052, 0.008, 20)
 
 /**
  * x, y, z の点を作る
@@ -122,49 +128,85 @@ const boxes = (c, list) => {
 }
 
 /**
- * 母屋。座敷が2つ、じいさんのへや、茶の間、台所、玄関、洗面所、仏間、小部屋、ものおき。南と東にろうか
+ * 昔の、ダイヤル式の緑の電話。本体、受話器、ダイヤルと、壁へのびる線
+ * @param y - 置く面の高さ
+ */
+const phone = (c, x, y, z) => {
+  const { b, mats } = c
+  box(b, mats.phone, x - 0.11, x + 0.11, y, y + 0.08, z - 0.1, z + 0.1)
+  box(b, mats.phone, x - 0.09, x + 0.09, y + 0.08, y + 0.11, z - 0.09, z + 0.03)
+  b.add(DIAL, mats.cream, at(x, y + 0.092, z + 0.06, 0.6))
+  b.add(DIAL, mats.phone, atScaled(x, y + 0.095, z + 0.062, 0.6, 0, 0, 0.35, 1, 0.35))
+  box(b, mats.phone, x - 0.1, x + 0.1, y + 0.115, y + 0.14, z - 0.05, z - 0.01)
+  box(b, mats.phone, x - 0.12, x - 0.06, y + 0.105, y + 0.155, z - 0.07, z + 0.01)
+  box(b, mats.phone, x + 0.06, x + 0.12, y + 0.105, y + 0.155, z - 0.07, z + 0.01)
+  tube(b, mats.cord, v(x - 0.06, y + 0.03, z - 0.1), v(x - 0.06, y + 0.03, -4.04), 0.004)
+  tube(b, mats.cord, v(x - 0.06, y + 0.03, -4.04), v(x - 0.06, FLOOR, -4.04), 0.004)
+}
+
+/**
+ * 母屋。座敷が2つ、じいさんのへや、茶の間、台所、玄関、洗面所、仏間、ものおき。南と東にろうか
  */
 const buildMain = (c) => {
   const { b, mats, W } = c
-  // 床下 (土台)
-  box(b, mats.base, -3.64, 8.19, 0, FLOOR, -5.46, 4.55)
+  // 床下 (土台)。台所のコンロの横は一段下がり、洗面所はさらに下がって、ほぼ外と同じ高さ
+  boxWithout(
+    b,
+    mats.base,
+    [-3.64, 8.19, 0, FLOOR, -5.46, 4.55],
+    [
+      [3.64, 4.55, LANDING, 1, -5.5, -4.55],
+      [4.55, 8.2, WASH, 1, -5.5, -4.1],
+    ],
+  )
   box(b, mats.base, 0, 9.1, 0, FLOOR, 4.55, 9.1)
-  box(b, mats.base, 8.19, 9.1, 0, FLOOR, -0.91, 4.55)
-  // 玄関の土間と外の石段、勝手口の踏み台、ろうかから庭へ下りる沓脱石
-  box(b, mats.doma, 8.19, 9.7, 0, 0.18, -3.64, -0.91)
-  box(b, mats.stone, 9.7, 10.4, 0, 0.09, -3.05, -1.5)
-  box(b, mats.doma, 8.19, 8.85, 0, 0.25, -5.36, -4.62)
+  box(b, mats.base, 8.19, 9.1, 0, FLOOR, -3.64, 4.55)
+  // 玄関の土間と外の石段、ろうかから庭へ下りる沓脱石
+  box(b, mats.doma, 9.1, 10.3, 0, 0.18, -3.64, -0.91)
+  box(b, mats.stone, 10.3, 11.0, 0, 0.09, -3.05, -1.5)
   box(b, mats.stone, 9.1, 9.75, 0, 0.25, 5.55, 6.35)
   c.floors.push(
     { x0: -3.64, x1: 8.19, z0: -5.46, z1: 4.55, h: FLOOR, s: 'board' },
     { x0: 0, x1: 9.1, z0: 4.55, z1: 9.1, h: FLOOR, s: 'board' },
-    { x0: 8.19, x1: 9.1, z0: -0.91, z1: 4.55, h: FLOOR, s: 'board' },
-    { x0: 9.7, x1: 10.4, z0: -3.05, z1: -1.5, h: 0.09, s: 'hard' },
-    { x0: 8.19, x1: 8.85, z0: -5.36, z1: -4.62, h: 0.25, s: 'hard' },
+    { x0: 8.19, x1: 9.1, z0: -3.64, z1: 4.55, h: FLOOR, s: 'board' },
+    { x0: 10.3, x1: 11.0, z0: -3.05, z1: -1.5, h: 0.09, s: 'hard' },
     { x0: 9.1, x1: 9.75, z0: 5.55, z1: 6.35, h: 0.25, s: 'hard' },
   )
 
   // 部屋
   const T = { floor: mats.tatami, sound: 'tatami' }
   const B = { floor: mats.board, sound: 'board' }
+  // ものおきと仏間は、あとから建て増した新しい部屋なので、フローリング
+  const F = { floor: mats.flooring, sound: 'board' }
   ;[
     { name: '座敷', x: [0.91, 4.55], z: [4.55, 8.19], ...T },
     { name: 'じいさんのへや', x: [4.55, 8.19], z: [4.55, 8.19], ...T },
     { name: '座敷', x: [0, 3.64], z: [0.91, 4.55], ...T },
     { name: '座敷', x: [0, 0.91], z: [0, 0.91], ...B },
     { name: '茶の間', x: [3.64, 8.19], z: [0, 4.55], ...T },
-    { name: '台所', x: [0, 4.55], z: [-5.46, 0], ...B },
+    { name: '台所', x: [0, 4.55], z: [-4.55, 0], ...B },
+    { name: '台所', x: [0, 3.64], z: [-5.46, -4.55], ...B },
+    { name: '台所', x: [3.64, 4.55], z: [-5.46, -4.55], ...B, y: LANDING },
     { name: '玄関', x: [4.55, 8.19], z: [-4.1, 0], ...B },
-    { name: '洗面所', x: [4.55, 8.19], z: [-5.46, -4.1], ...B },
-    { name: '仏間', x: [-3.64, 0], z: [-3.64, 0], ...T },
-    { name: '小部屋', x: [-3.64, 0], z: [-5.46, -3.64], ...T },
-    { name: 'ものおき', x: [-3.64, 0], z: [0, 4.55], ...T },
+    { name: '洗面所', x: [4.55, 8.19], z: [-5.46, -4.1], floor: mats.doma, sound: 'hard', y: WASH },
+    { name: '仏間', x: [-3.64, 0], z: [-4.55, 0], ...F },
+    { name: 'ものおき', x: [-3.64, 0], z: [0, 4.55], ...F },
     { name: 'ろうか', x: [0, 9.1], z: [8.19, 9.1], ...B },
     { name: 'ろうか', x: [8.19, 9.1], z: [-0.91, 8.19], ...B },
-    { name: '玄関', x: [8.19, 9.7], z: [-3.64, -0.91], floor: mats.doma, sound: 'hard', y: 0.18 },
+    { name: '玄関', x: [8.19, 9.1], z: [-3.64, -0.91], ...B },
+    {
+      name: '玄関',
+      x: [9.1, 10.3],
+      z: [-3.64, -0.91],
+      floor: mats.doma,
+      sound: 'hard',
+      y: 0.18,
+      ceil: 2.55,
+    },
   ].forEach((r) => room(c, { y: FLOOR, ceil: CEIL, ...r }))
-  // 床の間と押し入れの上の天井。階段の上は、あけておく
+  // 床の間と押し入れ、仏間の奥の押し入れと仏壇の上の天井。階段の上は、あけておく
   flat(b, mats.ceiling, CEIL, 0, 0.91, 4.55, 8.19, -1)
+  flat(b, mats.ceiling, CEIL, -3.64, 0, -5.46, -4.55, -1)
   // 2階 (天井裏) の床。階段の穴から見える
   const loft = CEIL + 0.2
   flat(b, mats.attic, loft, -3.64, 9.1, -5.46, 0, 1)
@@ -175,44 +217,64 @@ const buildMain = (c) => {
 
   // 外壁
   const y0 = FLOOR
-  // 北 (台所と洗面所の外)。流しの上と洗面所に窓
+  // 北 (台所と洗面所の外)。流しの上と洗面所に窓。洗面所は床が低いので、壁も下までのばす
   W.outer({
     axis: 'x',
     at: -5.46,
     from: 1.82,
-    to: 8.19,
+    to: 3.64,
     y0,
     y1: WALL_TOP,
     out: -1,
-    holes: [
-      { from: 2.15, to: 3.75, y0: y0 + 1.0, y1: y0 + 1.8 },
-      { from: 6.7, to: 7.5, y0: y0 + 1.0, y1: y0 + 1.75 },
-    ],
+    holes: [{ from: 1.95, to: 3.35, y0: y0 + 1.0, y1: y0 + 1.8 }],
+  })
+  W.outer({
+    axis: 'x',
+    at: -5.46,
+    from: 3.64,
+    to: 8.19,
+    y0: WASH,
+    y1: WALL_TOP,
+    out: -1,
+    holes: [{ from: 6.7, to: 7.5, y0: WASH + 1.0, y1: WASH + 1.75 }],
   })
   // 東。洗面所の勝手口
   W.outer({
     axis: 'z',
     at: 8.19,
     from: -5.46,
-    to: -3.64,
-    y0,
+    to: -4.1,
+    y0: WASH,
     y1: WALL_TOP,
     out: 1,
-    holes: [{ from: -5.36, to: -4.62, y0, y1: y0 + 1.8, door: true }],
+    holes: [{ from: -5.36, to: -4.62, y0: WASH, y1: WASH + 1.85, door: true }],
   })
-  // 玄関 (土間の北と南の壁と、表の戸口)
-  W.outer({ axis: 'x', at: -3.64, from: 8.19, to: 9.7, y0: 0.18, y1: 3.0, out: -1 })
+  W.outer({ axis: 'z', at: 8.19, from: -4.1, to: -3.64, y0, y1: WALL_TOP, out: 1 })
+  // 玄関。上がった所の北の壁と、土間の北と南の壁、表の戸口。屋根の下のすき間は、斜めの壁でふさぐ
+  /**
+   * 母屋の屋根の東側の、x の所の屋根板の下の高さ
+   */
+  const roofY = (x) => EAVE + ((10.45 - x) * RISE) / 7.72 - 0.04
+  W.outer({ axis: 'x', at: -3.64, from: 8.19, to: 9.1, y0: 0.18, y1: 3.3, out: -1 })
+  W.outer({ axis: 'x', at: -3.64, from: 9.1, to: 10.3, y0: 0.18, y1: 2.72, out: -1 })
   W.outer({
     axis: 'z',
-    at: 9.7,
+    at: 10.3,
     from: -3.64,
     to: -0.91,
     y0: 0.18,
-    y1: 3.0,
+    y1: 2.72,
     out: 1,
     holes: [{ from: -3.05, to: -1.5, y0: 0.18, y1: 2.25, door: true }],
   })
-  W.outer({ axis: 'x', at: -0.91, from: 9.1, to: 9.7, y0: 0.18, y1: 3.0, out: 1 })
+  W.outer({ axis: 'x', at: -0.91, from: 9.1, to: 10.3, y0: 0.18, y1: 2.72, out: 1 })
+  slantWall(b, mats.siding, 'x', -3.675, 8.19, 9.1, 3.3, roofY(8.19), roofY(9.1))
+  slantWall(b, mats.siding, 'x', -3.675, 9.1, 10.3, 2.72, roofY(9.1), roofY(10.3))
+  slantWall(b, mats.siding, 'x', -0.875, 9.1, 10.3, 2.72, roofY(9.1), roofY(10.3))
+  // 上がり框と、その上の小壁
+  box(b, mats.frame, 9.04, 9.16, 0.18, FLOOR, -3.64, -0.91)
+  box(b, mats.frame, 9.04, 9.16, 2.45, 2.55, -3.64, -0.91)
+  box(b, mats.plaster, 9.06, 9.14, 2.55, CEIL, -3.64, -0.91)
   // ろうかのガラス戸。東の1枚は、庭へ下りられるように、あけておく
   W.inner({
     axis: 'z',
@@ -228,7 +290,7 @@ const buildMain = (c) => {
   W.inner({ axis: 'x', at: 9.1, from: 0, to: 9.1, y0, y1: WALL_TOP, kind: 'glass', head: 1.85 })
   // 西。床の間と押し入れの裏と、ろうかの西の端
   W.outer({ axis: 'z', at: 0, from: 4.55, to: 9.1, y0, y1: WALL_TOP, out: -1 })
-  // 西に張り出した部屋 (ものおき・仏間・小部屋) の南と西
+  // 西に張り出した部屋 (ものおき・仏間) の南と西
   W.outer({
     axis: 'x',
     at: 4.55,
@@ -247,10 +309,7 @@ const buildMain = (c) => {
     y0,
     y1: WALL_TOP,
     out: -1,
-    holes: [
-      { from: 1.4, to: 3.0, y0: y0 + 0.9, y1: y0 + 1.8 },
-      { from: -5.05, to: -4.05, y0: y0 + 0.9, y1: y0 + 1.7 },
-    ],
+    holes: [{ from: 1.4, to: 3.0, y0: y0 + 0.9, y1: y0 + 1.8 }],
   })
   // 南西の角と北東の角は、屋根の下があいている。柱と桁だけ
   W.post('x', 9.1, -3.64, 0, WALL_TOP)
@@ -269,7 +328,21 @@ const buildMain = (c) => {
     W.inner({ axis, at: pos, from, to, y0: FLOOR, y1: CEIL, kind, doors })
   // 東西に走る壁 (z が一定)
   wall('x', 0, -3.64, 0, 'plaster')
-  wall('x', 0, 0, 4.55, 'plaster', [[0.06, 0.86]])
+  // 台所の南。西の1枚 (階段の前の通り) と、茶の間につながる東の端はあいている。あいだは、すりガラスの戸
+  W.inner({
+    axis: 'x',
+    at: 0,
+    from: 0,
+    to: 4.55,
+    y0: FLOOR,
+    y1: CEIL,
+    kind: 'glass',
+    pane: mats.frosted,
+    doors: [
+      [0.06, 0.86],
+      [3.64, 4.55],
+    ],
+  })
   wall('x', 0, 4.55, 8.19, 'fusuma', [[5.55, 6.46]])
   wall('x', 4.55, 0, 0.91, 'plaster')
   wall('x', 4.55, 0.91, 4.55, 'fusuma', [[3.68, 4.51]])
@@ -278,16 +351,29 @@ const buildMain = (c) => {
   wall('x', 8.19, 0, 0.91, 'plaster')
   wall('x', 8.19, 0.91, 4.55, 'shoji', [[2.75, 3.62]])
   wall('x', 8.19, 4.55, 8.19, 'shoji', [[6.4, 7.28]])
-  wall('x', -3.64, -3.64, 0, 'fusuma', [[-2.73, -1.82]])
-  wall('x', -4.1, 4.55, 8.19, 'plaster', [[7.3, 8.15]])
+  W.inner({ axis: 'x', at: -4.1, from: 4.55, to: 8.19, y0: WASH, y1: CEIL, kind: 'plaster' })
   // 南北に走る壁 (x が一定)
   wall('z', 0, 0, 4.55, 'fusuma', [[1.82, 2.73]])
-  wall('z', 0, -3.64, 0, 'plaster', [[-1.4, -0.5]])
-  wall('z', 0, -5.46, -3.64, 'plaster')
+  wall('z', 0, -5.46, 0, 'plaster', [[-1.4, -0.5]])
   wall('z', 0.91, 4.55, 6.37, 'fusuma')
   wall('z', 3.64, 0, 4.55, 'fusuma', [[2.3, 3.2]])
   wall('z', 4.55, 4.55, 8.19, 'fusuma', [[6.3, 7.2]])
-  wall('z', 4.55, -5.46, 0, 'plaster', [[-1.25, -0.35]])
+  wall('z', 4.55, -4.1, 0, 'plaster', [[-1.25, -0.35]])
+  // 台所のコンロの横 (一段下がった所) から、洗面所へ下りる戸口
+  W.inner({
+    axis: 'z',
+    at: 4.55,
+    from: -5.46,
+    to: -4.1,
+    y0: WASH,
+    y1: CEIL,
+    kind: 'plaster',
+    head: 1.95,
+    doors: [[-5.38, -4.62]],
+  })
+  // 仏間の奥。左 (西) に押し入れ、右 (東) に仏壇を置く棚
+  wall('x', -4.55, -3.64, -1.82, 'fusuma')
+  wall('z', -1.82, -5.46, -4.55, 'plaster')
   wall('z', 8.19, 4.55, 8.19, 'shoji', [[5.5, 6.4]])
   wall('z', 8.19, 0, 4.55, 'shoji', [[1.82, 2.73]])
   wall('z', 8.19, -0.91, 0, 'plaster')
@@ -310,47 +396,65 @@ const buildMain = (c) => {
 
   // 座敷の座卓
   table(c, mats.darkWood, 2.13, 3.33, 5.99, 6.75, FLOOR, FLOOR + 0.33)
-  // 茶の間のちゃぶ台と、南の壁ぎわのテレビ
-  b.add(CHABUDAI, mats.furniture, at(5.9, FLOOR + 0.315, 2.27))
-  ;[
-    [5.65, 2.02],
-    [6.1, 2.02],
-    [5.65, 2.47],
-    [6.1, 2.47],
-  ].forEach(([x, z]) => box(b, mats.furniture, x, x + LEG, FLOOR, FLOOR + 0.3, z, z + LEG))
-  W.rect(5.45, 6.35, 1.82, 2.72)
+  // 茶の間。真ん中にこたつ、北東の角に棚、南の壁ぎわにテレビ
+  box(b, mats.kotatsu, 5.25, 6.55, FLOOR, FLOOR + 0.36, 1.62, 2.92)
+  box(b, mats.furniture, 5.4, 6.4, FLOOR + 0.36, FLOOR + 0.39, 1.77, 2.77)
+  W.rect(5.25, 6.55, 1.62, 2.92)
+  shelf(c, mats.furniture, 6.75, 8.05, 0.07, 0.47, FLOOR, FLOOR + 1.2, 3)
   thing(c, mats.darkWood, 5.35, 6.35, FLOOR, FLOOR + 0.35, 3.95, 4.47)
   box(b, mats.tv, 5.45, 6.25, FLOOR + 0.35, FLOOR + 0.98, 4.0, 4.45)
   box(b, mats.screen, 5.53, 6.07, FLOOR + 0.43, FLOOR + 0.9, 3.985, 4.0)
-  // 台所。北の壁ぎわに流しとコンロ。冷蔵庫、食器棚、食卓
-  thing(c, mats.cream, 2.0, 3.8, FLOOR, FLOOR + 0.82, -5.39, -4.79)
-  box(b, mats.stainless, 1.98, 3.82, FLOOR + 0.82, FLOOR + 0.86, -5.41, -4.77)
-  box(b, mats.screen, 2.45, 3.05, FLOOR + 0.861, FLOOR + 0.865, -5.3, -4.92)
-  tube(b, mats.stainless, v(2.75, FLOOR + 0.86, -5.34), v(2.75, FLOOR + 1.12, -5.34), 0.012)
-  tube(b, mats.stainless, v(2.75, FLOOR + 1.12, -5.34), v(2.75, FLOOR + 1.08, -5.14), 0.01)
-  thing(c, mats.cream, 3.8, 4.48, FLOOR, FLOOR + 0.7, -5.39, -4.79)
-  box(b, mats.stove, 3.86, 4.42, FLOOR + 0.7, FLOOR + 0.8, -5.32, -4.86)
-  thing(c, mats.white, 0.07, 0.72, FLOOR, FLOOR + 1.55, -4.55, -3.9)
-  thing(c, mats.furniture, 0.07, 0.5, FLOOR, FLOOR + 1.8, -3.35, -1.85)
+  // 台所。北の壁ぎわに流しとコンロ。コンロの東は一段下がっていて、洗面所への戸口がある。冷蔵庫、食器棚、食卓
+  thing(c, mats.cream, 1.9, 3.0, FLOOR, FLOOR + 0.82, -5.39, -4.79)
+  box(b, mats.stainless, 1.88, 3.02, FLOOR + 0.82, FLOOR + 0.86, -5.41, -4.77)
+  box(b, mats.screen, 2.15, 2.75, FLOOR + 0.861, FLOOR + 0.865, -5.3, -4.92)
+  tube(b, mats.stainless, v(2.45, FLOOR + 0.86, -5.34), v(2.45, FLOOR + 1.12, -5.34), 0.012)
+  tube(b, mats.stainless, v(2.45, FLOOR + 1.12, -5.34), v(2.45, FLOOR + 1.08, -5.14), 0.01)
+  thing(c, mats.cream, 3.0, 3.6, FLOOR, FLOOR + 0.7, -5.39, -4.79)
+  box(b, mats.stove, 3.05, 3.55, FLOOR + 0.7, FLOOR + 0.8, -5.32, -4.86)
+  thing(c, mats.white, 0.07, 0.72, FLOOR, FLOOR + 1.55, -4.0, -3.35)
+  // 食器棚 (東の壁ぎわ)。下は戸棚、上はガラス戸で、皿が見える
+  const [cx0, cx1, cz0, cz1] = [4.05, 4.48, -3.9, -2.4]
+  thing(c, mats.furniture, cx0, cx1, FLOOR, FLOOR + 0.85, cz0, cz1)
+  box(b, mats.furniture, cx0 + 0.1, cx1, FLOOR + 0.85, FLOOR + 1.8, cz0, cz0 + 0.03)
+  box(b, mats.furniture, cx0 + 0.1, cx1, FLOOR + 0.85, FLOOR + 1.8, cz1 - 0.03, cz1)
+  box(b, mats.furniture, cx0 + 0.1, cx1, FLOOR + 1.77, FLOOR + 1.8, cz0, cz1)
+  box(b, mats.furniture, cx0 + 0.12, cx1, FLOOR + 1.3, FLOOR + 1.32, cz0, cz1)
+  box(b, mats.glass, cx0 + 0.1, cx0 + 0.106, FLOOR + 0.85, FLOOR + 1.77, cz0 + 0.03, cz1 - 0.03)
+  box(b, mats.white, cx0 + 0.2, cx0 + 0.32, FLOOR + 0.85, FLOOR + 0.95, cz0 + 0.2, cz0 + 0.55)
+  box(b, mats.white, cx0 + 0.2, cx0 + 0.32, FLOOR + 1.32, FLOOR + 1.4, cz1 - 0.6, cz1 - 0.2)
   table(c, mats.furniture, 1.8, 2.6, -3.4, -2.2, FLOOR, FLOOR + 0.72)
-  // 玄関。上がった所のたなと、土間の下駄箱
-  shelf(c, mats.furniture, 5.0, 7.0, -4.03, -3.65, FLOOR, FLOOR + 1.5, 3)
-  thing(c, mats.furniture, 8.25, 9.62, 0.18, 1.05, -3.57, -3.25)
-  // 洗面所。歯をみがく流しと鏡
-  thing(c, mats.white, 5.3, 6.3, FLOOR, FLOOR + 0.8, -5.39, -4.95)
-  box(b, mats.mirror, 5.45, 6.15, FLOOR + 1.05, FLOOR + 1.75, -5.389, -5.383)
-  // 仏間の仏壇。扉はあいている
-  const [px0, px1, pz0, pz1] = [-3.57, -3.0, -2.42, -1.22]
-  box(b, mats.lacquer, px0, px1, FLOOR, FLOOR + 0.45, pz0, pz1)
-  box(b, mats.lacquer, px0, px0 + 0.04, FLOOR + 0.45, FLOOR + 1.75, pz0, pz1)
-  box(b, mats.lacquer, px0, px1, FLOOR + 0.45, FLOOR + 1.75, pz0, pz0 + 0.04)
-  box(b, mats.lacquer, px0, px1, FLOOR + 0.45, FLOOR + 1.75, pz1 - 0.04, pz1)
-  box(b, mats.lacquer, px0, px1, FLOOR + 1.71, FLOOR + 1.75, pz0, pz1)
-  box(b, mats.gold, px0 + 0.04, px0 + 0.07, FLOOR + 0.5, FLOOR + 1.68, pz0 + 0.06, pz1 - 0.06)
-  box(b, mats.gold, px0 + 0.07, px1 - 0.08, FLOOR + 0.9, FLOOR + 0.94, pz0 + 0.04, pz1 - 0.04)
-  box(b, mats.lacquer, px1, px1 + 0.55, FLOOR + 0.48, FLOOR + 1.7, pz0, pz0 + 0.025)
-  box(b, mats.lacquer, px1, px1 + 0.55, FLOOR + 0.48, FLOOR + 1.7, pz1 - 0.025, pz1)
-  W.rect(-3.64, px1 + 0.55, pz0, pz1)
+  // 玄関。上がった所の北の壁に、端から端まで渡した一枚棚。緑の電話が乗っている。土間に下駄箱
+  box(b, mats.furniture, 4.6, 8.12, FLOOR + 1.05, FLOOR + 1.08, -4.05, -3.72)
+  ;[4.9, 6.37, 7.85].forEach((x) =>
+    box(b, mats.furniture, x - 0.02, x + 0.02, FLOOR + 0.85, FLOOR + 1.05, -4.05, -3.85),
+  )
+  W.rect(4.6, 8.12, -4.05, -3.72)
+  phone(c, 6.0, FLOOR + 1.08, -3.9)
+  thing(c, mats.furniture, 9.16, 10.24, 0.18, 1.05, -3.57, -3.25)
+  // 洗面所 (歯をみがく所)。台所より低く、ほぼ外と同じ高さ。流しと鏡
+  thing(c, mats.white, 5.3, 6.3, WASH, WASH + 0.8, -5.39, -4.95)
+  box(b, mats.screen, 5.55, 6.05, WASH + 0.801, WASH + 0.805, -5.3, -5.02)
+  tube(b, mats.stainless, v(5.8, WASH + 0.8, -5.35), v(5.8, WASH + 1.0, -5.35), 0.01)
+  tube(b, mats.stainless, v(5.8, WASH + 1.0, -5.35), v(5.8, WASH + 0.97, -5.2), 0.008)
+  box(b, mats.mirror, 5.45, 6.15, WASH + 1.1, WASH + 1.8, -5.389, -5.383)
+  // 仏壇を置く棚。前に落とし掛けと小壁があり、床は一段高い板。仏壇の扉は、前へあいている
+  box(b, mats.darkWood, -1.82, 0, FLOOR, FLOOR + 0.08, -5.46, -4.55)
+  box(b, mats.frame, -1.82, 0, FLOOR + 1.95, FLOOR + 2.02, -4.6, -4.5)
+  box(b, mats.plaster, -1.82, 0, FLOOR + 2.02, CEIL, -4.585, -4.515)
+  W.seg('x', -4.55, -1.82, 0)
+  const [ax0, ax1, az0, az1] = [-1.6, -0.22, -5.38, -4.72]
+  const ab = FLOOR + 0.08
+  box(b, mats.lacquer, ax0, ax1, ab, ab + 0.42, az0, az1)
+  box(b, mats.lacquer, ax0, ax1, ab + 0.42, ab + 1.7, az0, az0 + 0.04)
+  box(b, mats.lacquer, ax0, ax0 + 0.04, ab + 0.42, ab + 1.7, az0, az1)
+  box(b, mats.lacquer, ax1 - 0.04, ax1, ab + 0.42, ab + 1.7, az0, az1)
+  box(b, mats.lacquer, ax0, ax1, ab + 1.66, ab + 1.7, az0, az1)
+  box(b, mats.gold, ax0 + 0.06, ax1 - 0.06, ab + 0.47, ab + 1.62, az0 + 0.04, az0 + 0.07)
+  box(b, mats.gold, ax0 + 0.04, ax1 - 0.04, ab + 0.85, ab + 0.89, az0 + 0.04, az1 - 0.08)
+  box(b, mats.lacquer, ax0, ax0 + 0.025, ab + 0.45, ab + 1.65, az1, az1 + 0.5)
+  box(b, mats.lacquer, ax1 - 0.025, ax1, ab + 0.45, ab + 1.65, az1, az1 + 0.5)
+  W.rect(ax0, ax1, -4.55, az1 + 0.5)
   // ものおき (西に張り出した部屋)。段ボール箱
   boxes(c, [
     [-3.55, -2.95, FLOOR, FLOOR + 0.45, 0.12, 0.66],
@@ -375,20 +479,20 @@ const buildMain = (c) => {
   lamp(5.9, 2.27)
   lamp(2.27, -2.73)
   lamp(6.37, -2.05)
-  lamp(-1.82, -1.82)
+  lamp(-1.82, -2.27)
   lamp(-1.82, 2.27)
-  bare(8.95, -2.27)
+  bulb(b, mats, c.fixtures, 9.7, -2.27, 2.55)
   bare(6.37, -4.78)
   bare(4.55, 8.65)
   bare(8.65, 4.0)
 
   // 屋根。棟は南北で、東と西に軒が出る。北と南は妻 (三角の壁)
-  gableRoof(b, mats.roofMain, -4.24, 9.7, -5.46, 9.7, EAVE, RISE, 'z')
+  gableRoof(b, mats.roofMain, -4.99, 10.45, -5.46, 9.7, EAVE, RISE, 'z')
   gableEnd(b, mats.siding, 'z', -5.535, -3.64, 9.1, WALL_TOP, 3.1, -1)
   gableEnd(b, mats.siding, 'z', 9.175, -3.64, 9.1, WALL_TOP, 3.1, 1)
   // 玄関の庇
-  box(b, mats.roofMain, 9.7, 10.65, 2.5, 2.56, -3.45, -1.1)
-  ;[-3.35, -1.2].forEach((z) => box(b, mats.frame, 9.7, 10.5, 2.42, 2.5, z - 0.03, z + 0.03))
+  box(b, mats.roofMain, 10.3, 11.2, 2.42, 2.48, -3.45, -1.1)
+  ;[-3.35, -1.2].forEach((z) => box(b, mats.frame, 10.3, 11.0, 2.34, 2.42, z - 0.03, z + 0.03))
 }
 
 /**
@@ -459,26 +563,26 @@ const buildNorth = (c) => {
     y1: top,
     out: 1,
     holes: [
-      { from: 0.2, to: 1.1, y0: floor, y1: FLOOR + 1.8, door: true },
+      { from: 0.9, to: 1.75, y0: floor, y1: FLOOR + 1.8, door: true },
       { from: -5.1, to: -4.0, y0: 3.9, y1: 4.8 },
     ],
   })
-  // 母屋の台所と小部屋から見える側は、土壁にする
-  wallZ(b, mats.plaster, -5.388, -3.64, 0.2, FLOOR, CEIL, 1)
-  wallZ(b, mats.plaster, -5.388, 1.1, 1.82, FLOOR, CEIL, 1)
-  wallZ(b, mats.plaster, -5.388, 0.2, 1.1, FLOOR + 1.8, CEIL, 1)
+  // 母屋の台所と、仏間の奥の押し入れと棚から見える側は、土壁にする
+  wallZ(b, mats.plaster, -5.388, -3.64, 0.9, FLOOR, CEIL, 1)
+  wallZ(b, mats.plaster, -5.388, 1.75, 1.82, FLOOR, CEIL, 1)
+  wallZ(b, mats.plaster, -5.388, 0.9, 1.75, FLOOR + 1.8, CEIL, 1)
 
   // 1階の天井と2階の床。階段の上はあけておく
-  const [hx0, hz0, hz1] = [0.91, -11.3, -7.5]
+  const [hx0, hz0, hz1] = [0.91, -10.1, -6.3]
   flat(b, mats.ceiling, 2.8, x0, x1, z0, hz0, -1)
   flat(b, mats.ceiling, 2.8, x0, x1, hz1, z1, -1)
   flat(b, mats.ceiling, 2.8, x0, hx0, hz0, hz1, -1)
   flat(b, mats.attic, loft, x0, x1, z0, hz0, 1)
   flat(b, mats.attic, loft, x0, x1, hz1, z1, 1)
   flat(b, mats.attic, loft, x0, hx0, hz0, hz1, 1)
-  // 2階へ上がる階段。下は北の端で、中庭への戸口のそば
-  stairs(b, mats.board, 0.97, 1.75, -11.2, -7.6, floor, loft, 14, '+z')
-  W.rect(0.95, 1.82, -11.22, -7.58)
+  // 2階へ上がる階段。台所の戸口から入って、そのまま北へ上がる
+  stairs(b, mats.board, 0.97, 1.75, -10.0, -6.4, floor, loft, 14, '-z')
+  W.rect(0.95, 1.82, -10.02, -6.38)
 
   // ものおきの中。棚、たんす、箱
   shelf(c, mats.furniture, x0 + 0.1, x0 + 0.6, -12.5, -10.1, floor, 2.0, 3)
@@ -643,7 +747,7 @@ const buildBath = (c) => {
   bulb(b, mats, c.fixtures, 15.47, -6.4, 2.3)
 
   // 屋根。棟は南北
-  gableRoof(b, mats.roofShed, x0 - over, x1 + over, z0 - over, z1 + over, eave, rise, 'z')
+  gableRoof(b, mats.roofShed, x0 - over, x1 + over, z0 - over, z1 + 0.1, eave, rise, 'z')
   gableEnd(b, mats.shedBoard, 'z', z0 - 0.075, x0, x1, top, rise - (over * rise) / half, -1)
   gableEnd(b, mats.shedBoard, 'z', z1 + 0.075, x0, x1, top, rise - (over * rise) / half, 1)
 }

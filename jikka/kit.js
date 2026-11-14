@@ -236,6 +236,31 @@ export const gableEnd = (b, mat, axis, pos, a0, a1, y, rise, dir) => {
 }
 
 /**
+ * 上の辺が斜めの壁の面。屋根の下のすき間をふさぐ。表と裏の両方に張る
+ * @param axis - 'x' なら z = pos の面に、'z' なら x = pos の面に張る
+ * @param ya - a0 の所の上の高さ
+ * @param yb - a1 の所の上の高さ
+ */
+export const slantWall = (b, mat, axis, pos, a0, a1, y0, ya, yb) => {
+  /**
+   * 壁の面の上の点を、x, y, z の並びにする
+   */
+  const p = (a, y) => (axis === 'x' ? [a, y, pos] : [pos, y, a])
+  const [q0, q1, q2, q3] = [p(a0, y0), p(a1, y0), p(a1, Math.max(y0, yb)), p(a0, Math.max(y0, ya))]
+  const g = new THREE.BufferGeometry()
+  g.setAttribute(
+    'position',
+    new THREE.Float32BufferAttribute(
+      [...q0, ...q1, ...q2, ...q0, ...q2, ...q3, ...q0, ...q2, ...q1, ...q0, ...q3, ...q2],
+      3,
+    ),
+  )
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(new Array(24).fill(0), 2))
+  g.computeVertexNormals()
+  b.add(g, mat, at(0, 0, 0))
+}
+
+/**
  * 段を積んだ階段を置く。上る向きに、段の箱を1つずつ重ねる
  * @param dir - 上る向き。'+x' / '-x' / '+z' / '-z'
  * @param n - 段の数
@@ -351,8 +376,9 @@ export const makeWalls = (b, mats, segs) => {
 
   /**
    * ガラス戸を、1枚ずつ幅に合わせて並べる。2本の溝に、互い違いに入っている
+   * @param pane - ガラスのマテリアル (すりガラスなど)
    */
-  const glassDoors = (axis, c, a0, a1, y0, y1) => {
+  const glassDoors = (axis, c, a0, a1, y0, y1, pane) => {
     const n = Math.max(1, Math.round((a1 - a0) / 0.91))
     const w = (a1 - a0) / n
     for (let i = 0; i < n; i++) {
@@ -364,7 +390,7 @@ export const makeWalls = (b, mats, segs) => {
       slab(mats.frame, axis, cc, p0, p1, y0, y0 + 0.08, 0.032)
       slab(mats.frame, axis, cc, p0, p1, y1 - 0.05, y1, 0.032)
       slab(mats.frame, axis, cc, p0, p1, y0 + 0.82, y0 + 0.85, 0.028)
-      slab(mats.glass, axis, cc, p0 + 0.04, p1 - 0.04, y0 + 0.08, y1 - 0.05, 0.006)
+      slab(pane, axis, cc, p0 + 0.04, p1 - 0.04, y0 + 0.08, y1 - 0.05, 0.006)
     }
   }
 
@@ -374,6 +400,7 @@ export const makeWalls = (b, mats, segs) => {
    * @param spec.doors - 戸があいている所の並び。それぞれ [始まり, 終わり]
    * @param spec.head - 鴨居の高さ。y0 からの長さ (m)
    * @param spec.mat - kind が 'plaster' の時の壁のマテリアル。無ければ土壁
+   * @param spec.pane - kind が 'glass' の時のガラスのマテリアル。無ければ透明なガラス
    */
   const inner = (spec) => {
     const { axis, at: c, from, to, y0, y1, kind, doors = [] } = spec
@@ -385,7 +412,7 @@ export const makeWalls = (b, mats, segs) => {
       } else if (kind === 'shoji') {
         panels(mats.shoji, axis, c, a0, a1, y0, head)
       } else if (kind === 'glass') {
-        glassDoors(axis, c, a0, a1, y0, head)
+        glassDoors(axis, c, a0, a1, y0, head, spec.pane ?? mats.glass)
       } else {
         slab(wallMat, axis, c, a0, a1, y0, head, 0.1)
       }

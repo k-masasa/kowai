@@ -143,12 +143,12 @@ const yard = (c) => {
   flat(b, mats.dirt, 0.004, 1.82, 9.1, -13.2, -5.46, 1)
   flat(b, mats.dirt, 0.004, -6.4, 17.2, -14.0, -12.74, 1)
   // 玄関から道までの砂利の道
-  flat(b, mats.gravel, 0.008, 10.4, ROAD_W, -3.5, -1.05, 1)
+  flat(b, mats.gravel, 0.008, 11.0, ROAD_W, -3.5, -1.05, 1)
   c.floors.push(
     { x0: 9.1, x1: 17.5, z0: -6.5, z1: 12.5, h: 0, s: 'ground' },
     { x0: 1.82, x1: 9.1, z0: -13.2, z1: -5.46, h: 0, s: 'ground' },
     { x0: -6.4, x1: 17.2, z0: -14.0, z1: -12.74, h: 0, s: 'ground' },
-    { x0: 10.4, x1: ROAD_W, z0: -3.5, z1: -1.05, h: 0, s: 'gravel' },
+    { x0: 11.0, x1: ROAD_W, z0: -3.5, z1: -1.05, h: 0, s: 'gravel' },
   )
   c.places.push({ name: '中庭', x0: 1.82, x1: 9.1, z0: -12.74, z1: -5.46 })
 
