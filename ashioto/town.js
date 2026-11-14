@@ -19,6 +19,7 @@ import {
   shrineSignTexture,
   shutterTexture,
   signTexture,
+  silhouetteTexture,
   stoneTileTexture,
   storeTileTexture,
   walkSignalTexture,
@@ -384,6 +385,14 @@ export const buildTown = (scene, origin, shared) => {
   )
   box(b, mat.steel, X(7.925), X(7.945), 0.99, 1.01, Z(-5.48), Z(-5.34))
   sign(signTexture(['警備室', ''], 256, 120), 0.36, 0.17, X(7.95), 2.32, Z(-5.15), -Math.PI / 2)
+  // すりガラスの向こうに、警備員の影が立っている
+  const guardShadow = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.36, 0.3),
+    new THREE.MeshBasicMaterial({ map: silhouetteTexture(), transparent: true, depthWrite: false }),
+  )
+  guardShadow.position.set(X(7.952), 1.55, Z(-5.15))
+  guardShadow.rotation.y = -Math.PI / 2
+  root.add(guardShadow)
   // 天井の明かり。夜なので、半分は消えている
   ;[
     [0, -6.5, true],
@@ -668,6 +677,7 @@ export const buildTown = (scene, origin, shared) => {
     // ロビーのエレベーターの前。ここから始める
     start: new THREE.Vector3(X(-2.4), 0, Z(-8.6)),
     door: new THREE.Vector3(X(0), 0, Z(3)),
+    guardShadow,
     // コンビニの店員の立つ場所 (レジのうしろ)
     clerk: new THREE.Vector3(X(24.35), 0, Z(-0.95)),
     // 歩道に落ちている鈴と、その場所

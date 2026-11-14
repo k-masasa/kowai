@@ -756,6 +756,24 @@ const lines = (ctx, list, x, y, gap, font, color) => {
 }
 
 /**
+ * すりガラスの向こうに立つ人の影。頭と肩の形を、ぼかして描く。まわりは透明
+ */
+export const silhouetteTexture = () =>
+  canvasTexture(128, 128, (ctx, w, h) => {
+    ctx.filter = 'blur(5px)'
+    ctx.fillStyle = 'rgba(30, 28, 26, 0.85)'
+    ctx.beginPath()
+    ctx.ellipse(w * 0.52, h * 0.34, w * 0.13, h * 0.16, 0, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.beginPath()
+    ctx.moveTo(w * 0.18, h * 1.05)
+    ctx.quadraticCurveTo(w * 0.2, h * 0.58, w * 0.52, h * 0.55)
+    ctx.quadraticCurveTo(w * 0.84, h * 0.58, w * 0.86, h * 1.05)
+    ctx.fill()
+    ctx.filter = 'none'
+  })
+
+/**
  * 町内会の掲示板に重ねて貼ってある、お願いの紙。夜中に鈴の音がしても、外を見ないように
  */
 export const suzuNoticeTexture = () =>

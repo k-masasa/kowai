@@ -169,6 +169,9 @@ const dayState = () => ({
   // 走って鈴を鳴らし続けた長さ (秒)。歩くと減る。心臓の音を次に鳴らすまでの秒数
   noise: 0,
   noiseBeat: 0,
+  // 通りを歩く人を次に出すまでの秒数と、すれ違った人が振り返って白い顔を見せたか
+  pedIn: 1,
+  pedGhost: false,
   seekerGone: 0,
   vendTrap: false,
   vendFor: 0,
@@ -360,7 +363,7 @@ const person = createPerson()
 person.group.visible = false
 scene.add(person.group)
 // 町と電車にいる人たち。乗客、ホームで待つ人、コンビニの店員
-const crowd = createCrowd(20)
+const crowd = createCrowd(22)
 // 上の踊り場で、鈴の音を探している人。電車やホームに出てくるのと同じ、顔の無い黒いコートの人
 const seeker = createFigure()
 seeker.group.visible = false
@@ -628,6 +631,7 @@ const placeStart = (from) => {
     return
   }
   S.checkpoint = false
+  town.guardShadow.visible = true
   S.story = { stage: 'none', look: 0, carX: 22, unseen: 0 }
   S.pos.copy(town.start)
   S.yaw = Math.PI
@@ -2629,6 +2633,80 @@ const updateTown = (dt) => {
   if (d < 25) sound.chirp(0.05 * (1 - d / 25))
 }
 
+const guardBase = town.guardShadow.position.z
+const pedHead = new THREE.Vector3()
+
+/**
+ * 通りを歩く人を1人出す。向こう (駅の方) から来てすれ違う人か、少し先を同じ向きに歩く人
+ * @param toward - こちらへ向かって来る人なら true
+ */
+const spawnPedestrian = (toward) => {
+  const m = crowd.take('ped')
+  if (!m) return
+  const tx = town.door.x
+  const z = town.door.z + (toward ? 2.4 : 1.3)
+  const x0 = toward ? Math.min(S.pos.x + 40, tx + 95) : S.pos.x + 10
+  const x1 = toward ? tx - 30 : tx + 95
+  if (!toward && x0 > x1 - 5) {
+    crowd.release(m)
+    return
+  }
+  crowd.put(m, scene, x0, 0, z, toward ? -Math.PI / 2 : Math.PI / 2, 'stand', 20 + m.k)
+  m.toward = toward
+  m.state = 'walk'
+  crowd.walk(m, [v3(x1, 0, z)], { speed: toward ? 1.15 : 0.85, done: () => crowd.release(m) })
+}
+
+/**
+ * すれ違った人を振り返って見ると、立ち止まって、白い顔でこちらを向いている。すぐに消える (1日に1回、ふつう以上)
+ */
+const watchPedestrian = (m, dt) => {
+  if (!m.toward || !S.level.events) return
+  const p = m.p.group.position
+  if (m.state === 'stare') {
+    m.stare -= dt
+    m.p.group.rotation.y = Math.atan2(S.pos.x - p.x, S.pos.z - p.z)
+    if (m.stare > 0) return
+    crowd.release(m)
+    sound.flicker()
+    return
+  }
+  if (S.pedGhost) return
+  const behind = S.pos.x - p.x
+  if (behind < 3 || behind > 22) return
+  pedHead.copy(p)
+  pedHead.y += 1.6
+  if (!lookingAt(pedHead, 0.25)) return
+  S.pedGhost = true
+  m.state = 'stare'
+  m.stare = 1.5
+  m.path = null
+  m.p.stand()
+  m.p.blank(true)
+  sound.whisper()
+}
+
+/**
+ * 会社のまわりの人。警備室のすりガラスの影は、少しゆれていて、ドアの前まで来ると消えている。
+ * 通りには、向こうから来てすれ違う人と、先を歩く人がいる。駅に入るまで
+ */
+const updateStreetPeople = (dt) => {
+  if (!S.story || S.story.stage !== 'none') return
+  const g = town.guardShadow
+  if (g.visible) {
+    g.position.z = guardBase + Math.sin(performance.now() * 0.0004) * 0.04
+    if (Math.hypot(S.pos.x - g.position.x, S.pos.z - g.position.z) < 2.4) g.visible = false
+  }
+  if (!S.tag.startsWith('@C') && S.tag !== '@OD') return
+  const peds = crowd.people.filter((m) => m.used && m.tag === 'ped')
+  S.pedIn -= dt
+  if (S.pedIn <= 0 && peds.length < 2) {
+    S.pedIn = 6 + Math.random() * 6
+    spawnPedestrian(!peds.some((m) => m.toward))
+  }
+  peds.forEach((m) => watchPedestrian(m, dt))
+}
+
 /**
  * エントランスの自動ドアを開け閉めする。中に入った後は、もう開かない
  */
@@ -2663,6 +2741,7 @@ const updatePlay = (dt) => {
   if (S.mode !== 'play') return
   crowd.update(dt)
   updateTown(dt)
+  updateStreetPeople(dt)
   updateShrine()
   updateStory(dt)
   move(dt)
