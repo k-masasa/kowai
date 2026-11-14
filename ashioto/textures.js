@@ -86,8 +86,52 @@ export const wallTexture = () =>
     ctx.fillStyle = '#afa694'
     ctx.fillRect(0, 0, w, h)
     speckle(ctx, w, h, 6000, ['#b9b09f', '#a39a89', '#bfb7a7'], 2)
-    stains(ctx, w, h, 14, '90, 75, 55', 0.22)
+    stains(ctx, w, h, 6, '90, 75, 55', 0.12)
     speckle(ctx, w, h, 500, ['rgba(60, 50, 40, 0.25)'], 3)
+  })
+
+/**
+ * 駅の中の壁。白っぽい化粧パネルが並び、細い継ぎ目がある。1枚で 1.8m 四方 (パネル2枚分)
+ */
+export const stationPanelTexture = () =>
+  canvasTexture(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#d6d4cc'
+    ctx.fillRect(0, 0, w, h)
+    speckle(ctx, w, h, 3000, ['rgba(255, 255, 255, 0.1)', 'rgba(0, 0, 0, 0.04)'], 1.3)
+    stains(ctx, w, h, 2, '90, 80, 60', 0.06)
+    ctx.fillStyle = 'rgba(60, 60, 55, 0.4)'
+    ;[0, w / 2].forEach((x) => ctx.fillRect(x, 0, 2, h))
+    ctx.fillRect(0, 0, w, 2)
+  })
+
+/**
+ * 改札機のはしの、通れるかどうかのランプ。黒い地に、緑の矢印か、赤の ×
+ */
+export const gateLampTexture = (go) =>
+  canvasTexture(64, 48, (ctx, w, h) => {
+    ctx.fillStyle = '#0b0c0d'
+    ctx.fillRect(0, 0, w, h)
+    ctx.strokeStyle = go ? '#3be36b' : '#ff3b30'
+    ctx.fillStyle = ctx.strokeStyle
+    ctx.lineWidth = 6
+    ctx.beginPath()
+    if (go) {
+      ctx.moveTo(w / 2, 8)
+      ctx.lineTo(w / 2 + 14, 26)
+      ctx.lineTo(w / 2 + 5, 26)
+      ctx.lineTo(w / 2 + 5, 40)
+      ctx.lineTo(w / 2 - 5, 40)
+      ctx.lineTo(w / 2 - 5, 26)
+      ctx.lineTo(w / 2 - 14, 26)
+      ctx.closePath()
+      ctx.fill()
+      return
+    }
+    ctx.moveTo(w / 2 - 12, 10)
+    ctx.lineTo(w / 2 + 12, 38)
+    ctx.moveTo(w / 2 + 12, 10)
+    ctx.lineTo(w / 2 - 12, 38)
+    ctx.stroke()
   })
 
 /**
@@ -1681,27 +1725,125 @@ export const shutterTexture = () =>
   })
 
 /**
- * コンビニの店の中。明るい棚に、色とりどりの品物。ガラス越しに見える
+ * コンビニの棚の1段分の品物。色とりどりの箱や袋が、2つか3つずつ並ぶ。1枚で 横 1m、高さ 0.3m
  */
-export const storeInsideTexture = () =>
-  canvasTexture(768, 384, (ctx, w, h) => {
-    ctx.fillStyle = '#f4f6f6'
+export const goodsTexture = () =>
+  canvasTexture(512, 160, (ctx, w, h) => {
+    ctx.fillStyle = '#dfe2e1'
     ctx.fillRect(0, 0, w, h)
-    ctx.fillStyle = '#e1e4e3'
-    ctx.fillRect(0, h * 0.78, w, h * 0.22)
-    const colors = ['#d8392b', '#2b6fb8', '#f2b705', '#3a9b52', '#e86f2b', '#7a4bb3', '#f5f5f0']
-    for (let shelf = 0; shelf < 4; shelf++) {
-      const y = 70 + shelf * 62
-      ctx.fillStyle = '#c9cdcc'
-      ctx.fillRect(40, y + 40, w - 80, 6)
-      for (let x = 44; x < w - 50; x += 14 + Math.random() * 10) {
-        ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)]
-        const hh = 18 + Math.random() * 20
-        ctx.fillRect(x, y + 40 - hh, 10 + Math.random() * 6, hh)
+    const colors = [
+      '#d8392b',
+      '#2b6fb8',
+      '#f2b705',
+      '#3a9b52',
+      '#e86f2b',
+      '#7a4bb3',
+      '#f5f5f0',
+      '#1f2a44',
+      '#c2185b',
+    ]
+    let x = 3
+    while (x < w - 12) {
+      const pw = Math.min(16 + Math.random() * 30, w - 3 - x)
+      const ph = 50 + Math.random() * 100
+      const c = colors[Math.floor(Math.random() * colors.length)]
+      // 同じ商品を2つか3つ、並べて置く
+      const n = 1 + Math.floor(Math.random() * 3)
+      for (let k = 0; k < n && x < w - 12; k++) {
+        ctx.fillStyle = c
+        ctx.fillRect(x, h - ph, pw - 2, ph)
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)'
+        ctx.fillRect(x + 3, h - ph * 0.62, pw - 8, ph * 0.18)
+        const shine = ctx.createLinearGradient(x, 0, x + pw, 0)
+        shine.addColorStop(0, 'rgba(255, 255, 255, 0.25)')
+        shine.addColorStop(0.4, 'rgba(255, 255, 255, 0)')
+        shine.addColorStop(1, 'rgba(0, 0, 0, 0.25)')
+        ctx.fillStyle = shine
+        ctx.fillRect(x, h - ph, pw - 2, ph)
+        x += pw
       }
     }
-    ctx.fillStyle = '#2b6fb8'
-    ctx.fillRect(0, 0, w, 26)
+  })
+
+/**
+ * コンビニの冷蔵庫の扉の中。明るい棚に、ペットボトルや缶が並ぶ。扉1枚分
+ */
+export const fridgeTexture = () =>
+  canvasTexture(256, 640, (ctx, w, h) => {
+    ctx.fillStyle = '#c9d3da'
+    ctx.fillRect(0, 0, w, h)
+    const light = ctx.createLinearGradient(0, 0, 0, h)
+    light.addColorStop(0, 'rgba(255, 255, 255, 0.6)')
+    light.addColorStop(1, 'rgba(120, 130, 140, 0.4)')
+    ctx.fillStyle = light
+    ctx.fillRect(0, 0, w, h)
+    const colors = ['#e33b2e', '#f4f4f0', '#2a7bd1', '#f2c230', '#3aa860', '#8a5a2b', '#ef7f2a']
+    for (let row = 0; row < 6; row++) {
+      const y = 20 + row * 102
+      ctx.fillStyle = '#9aa4ab'
+      ctx.fillRect(0, y + 90, w, 6)
+      let x = 6
+      while (x < w - 26) {
+        const c = colors[Math.floor(Math.random() * colors.length)]
+        const bw = 22 + Math.random() * 6
+        const bh = 60 + Math.random() * 26
+        ctx.fillStyle = c
+        ctx.fillRect(x + 3, y + 90 - bh, bw - 6, bh)
+        ctx.fillRect(x + bw / 2 - 4, y + 90 - bh - 8, 8, 8)
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.55)'
+        ctx.fillRect(x + 5, y + 90 - bh * 0.55, bw - 10, 12)
+        x += bw
+      }
+    }
+  })
+
+/**
+ * コンビニの窓ぎわの雑誌の棚。表紙がいろいろな色で並ぶ。1枚で 横 2m
+ */
+export const magazineTexture = () =>
+  canvasTexture(512, 128, (ctx, w, h) => {
+    ctx.fillStyle = '#d8dadb'
+    ctx.fillRect(0, 0, w, h)
+    const colors = ['#d8392b', '#2b6fb8', '#111111', '#f2b705', '#e86fa0', '#3a9b52', '#f4f4f0']
+    for (let x = 4; x < w - 30; x += 34) {
+      ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)]
+      ctx.fillRect(x, 10, 30, h - 14)
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'
+      ctx.fillRect(x + 3, 16, 24, 9)
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.25)'
+      ctx.fillRect(x + 4, 40 + Math.random() * 40, 20, 26)
+    }
+  })
+
+/**
+ * コンビニのレジのうしろの、たばこの棚。小さな箱が、ます目に並ぶ
+ */
+export const cigarettesTexture = () =>
+  canvasTexture(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#2b2d30'
+    ctx.fillRect(0, 0, w, h)
+    const colors = ['#f4f4f0', '#1f3d7a', '#c0392b', '#d4ac0d', '#2e86c1', '#7b7d7d', '#145a32']
+    for (let y = 6; y < h - 20; y += 31) {
+      for (let x = 6; x < w - 14; x += 20) {
+        ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)]
+        ctx.fillRect(x, y, 16, 25)
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)'
+        ctx.fillRect(x + 2, y + 3, 12, 4)
+      }
+    }
+  })
+
+/**
+ * コンビニの床。白いタイルに、灰色の目地。1枚で 0.6m 四方
+ */
+export const storeTileTexture = () =>
+  canvasTexture(128, 128, (ctx, w, h) => {
+    ctx.fillStyle = '#e6e7e3'
+    ctx.fillRect(0, 0, w, h)
+    speckle(ctx, w, h, 600, ['rgba(0, 0, 0, 0.04)', 'rgba(255, 255, 255, 0.4)'], 1.5)
+    ctx.fillStyle = '#b9bbb7'
+    ctx.fillRect(0, 0, w, 2)
+    ctx.fillRect(0, 0, 2, h)
   })
 
 /**

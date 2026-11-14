@@ -4,17 +4,21 @@ import {
   asphaltTexture,
   ceilingTexture,
   concreteTexture,
+  cigarettesTexture,
   directoryTexture,
   fraudPosterTexture,
+  fridgeTexture,
   gateTopTexture,
+  goodsTexture,
   kobanSignTexture,
+  magazineTexture,
   paverTexture,
   shopSignTexture,
   shrineSignTexture,
   shutterTexture,
   signTexture,
   stoneTileTexture,
-  storeInsideTexture,
+  storeTileTexture,
   walkSignalTexture,
   wallTexture,
 } from './textures.js'
@@ -69,7 +73,6 @@ export const buildTown = (scene, origin, shared) => {
     red: new THREE.MeshBasicMaterial({ color: 0xff2414 }),
     off: new THREE.MeshBasicMaterial({ color: 0x2a2c30 }),
     glow: new THREE.MeshBasicMaterial({ color: 0xf2f5ff }),
-    store: new THREE.MeshBasicMaterial({ map: storeInsideTexture() }),
     directory: new THREE.MeshBasicMaterial({ map: directoryTexture(), color: 0xcccccc }),
     koban: new THREE.MeshBasicMaterial({ map: kobanSignTexture() }),
     fraud: new THREE.MeshStandardMaterial({ map: fraudPosterTexture(), roughness: 0.75 }),
@@ -105,6 +108,134 @@ export const buildTown = (scene, origin, shared) => {
     }
     shared.fixtures.push(f)
     return f
+  }
+
+  // コンビニの中。道から見て明るいように、白い物や品物は少し自分で光らせる
+  /**
+   * 品物の絵を、自分でも少し光るマテリアルにする
+   * @param repeat - 横に繰り返す回数
+   */
+  const goodsMat = (map, repeat = 1) => {
+    map.repeat.set(repeat, 1)
+    return new THREE.MeshStandardMaterial({
+      map,
+      emissiveMap: map,
+      emissive: 0xffffff,
+      emissiveIntensity: 0.45,
+      roughness: 0.6,
+    })
+  }
+  const store = {
+    floor: tiled(storeTileTexture(), 0.6, { roughness: 0.18, emissive: 0x2c2c2a }),
+    white: new THREE.MeshStandardMaterial({ color: 0xeff0ec, roughness: 0.55, emissive: 0x4a4a48 }),
+    shelf: new THREE.MeshStandardMaterial({
+      color: 0xcfd2d2,
+      roughness: 0.4,
+      metalness: 0.3,
+      emissive: 0x2a2a2a,
+    }),
+    tag: new THREE.MeshStandardMaterial({ color: 0xf4f4f0, roughness: 0.5, emissive: 0x777777 }),
+    goods: [0, 1, 2].map(() => goodsMat(goodsTexture(), 3.6)),
+    magazine: goodsMat(magazineTexture()),
+    cigarettes: goodsMat(cigarettesTexture(), 2),
+    fridge: new THREE.MeshBasicMaterial({ map: fridgeTexture() }),
+    frame: new THREE.MeshStandardMaterial({ color: 0x2a2c2f, roughness: 0.4, metalness: 0.5 }),
+    wood: new THREE.MeshStandardMaterial({ color: 0xb58a5a, roughness: 0.5, emissive: 0x2a1c10 }),
+    screen: new THREE.MeshBasicMaterial({ color: 0xcfe6ff }),
+    hot: new THREE.MeshBasicMaterial({ map: goodsTexture(), color: 0xffb867 }),
+  }
+  const binMats = new Map()
+
+  /**
+   * 店の前のごみ箱の色のマテリアル。同じ色は使い回す
+   */
+  const binMat = (color) => {
+    if (!binMats.has(color)) {
+      binMats.set(color, new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.2 }))
+    }
+    return binMats.get(color)
+  }
+
+  /**
+   * 店の真ん中の棚を1列。台、真ん中の板、両側に4段の棚板と品物、値札の帯、両はしの板
+   * @param x0 - 西の端 / x1 - 東の端 / zc - 真ん中の z (どれも町の座標)
+   */
+  const gondola = (x0, x1, zc) => {
+    box(b, store.shelf, X(x0), X(x1), 0, 0.12, Z(zc - 0.45), Z(zc + 0.45))
+    box(b, store.white, X(x0), X(x1), 0.12, 1.45, Z(zc - 0.03), Z(zc + 0.03))
+    ;[-1, 1].forEach((s) => {
+      const [za, zz] = s > 0 ? [zc + 0.03, zc + 0.44] : [zc - 0.44, zc - 0.03]
+      ;[0.12, 0.45, 0.78, 1.11].forEach((y, k) => {
+        box(b, store.shelf, X(x0), X(x1), y, y + 0.02, Z(za), Z(zz))
+        b.add(
+          new THREE.PlaneGeometry(x1 - x0, 0.3),
+          store.goods[(k + (s > 0 ? 0 : 1)) % store.goods.length],
+          at(X((x0 + x1) / 2), y + 0.17, Z(zc + s * 0.4), 0, s > 0 ? 0 : Math.PI),
+        )
+        const [ta, tz] = s > 0 ? [zc + 0.44, zc + 0.455] : [zc - 0.455, zc - 0.44]
+        box(b, store.tag, X(x0), X(x1), y - 0.035, y + 0.02, Z(ta), Z(tz))
+      })
+    })
+    ;[x0, x1].forEach((x) =>
+      box(b, store.white, X(x - 0.02), X(x + 0.02), 0, 1.45, Z(zc - 0.45), Z(zc + 0.45)),
+    )
+  }
+
+  /**
+   * コンビニの店の中。白い床と天井の明かり、奥の冷蔵庫、真ん中の2列の棚、窓ぎわの雑誌、
+   * 右のレジ (カウンター、レジの機械、ホットスナックのケース、うしろのたばこの棚)
+   * @param xa - 西の壁 / xc - 東の壁 / zb - 奥の壁 / zf - ガラス (どれも町の座標)
+   */
+  const buildStore = (xa, xc, zb, zf) => {
+    const H = 2.75
+    flat(b, store.floor, 0.004, X(xa), X(xc), Z(zb), Z(zf), 1)
+    flat(b, store.white, H, X(xa), X(xc), Z(zb), Z(zf), -1)
+    wallZ(b, store.white, Z(zb), X(xa), X(xc), 0, H, 1)
+    for (let x = xa + 1.0; x < xc - 1.0; x += 2.0) {
+      for (let z = zb + 1.2; z < zf - 0.4; z += 2.2) {
+        b.add(
+          new THREE.PlaneGeometry(1.2, 0.3),
+          mat.glow,
+          at(X(x + 0.3), H - 0.005, Z(z), Math.PI / 2),
+        )
+      }
+    }
+    for (let x = xa + 0.4; x + 0.75 < xc - 2.2; x += 0.78) {
+      b.add(new THREE.PlaneGeometry(0.74, 1.9), store.fridge, at(X(x + 0.39), 1.08, Z(zb + 0.06)))
+      box(b, store.frame, X(x), X(x + 0.04), 0.1, 2.05, Z(zb), Z(zb + 0.1))
+    }
+    box(b, store.frame, X(xa + 0.4), X(xc - 2.2), 2.03, 2.2, Z(zb), Z(zb + 0.12))
+    box(b, store.frame, X(xa + 0.4), X(xc - 2.2), 0, 0.12, Z(zb), Z(zb + 0.12))
+    ;[zb + 2.4, zb + 4.5].forEach((zc) => gondola(xa + 1.0, xa + 4.6, zc))
+    box(b, store.shelf, X(xa + 0.15), X(xa + 2.6), 0, 0.7, Z(zf - 0.55), Z(zf - 0.2))
+    b.add(
+      new THREE.PlaneGeometry(2.4, 0.42),
+      store.magazine,
+      at(X(xa + 1.375), 0.9, Z(zf - 0.37), -0.35),
+    )
+    box(b, store.white, X(xc - 1.9), X(xc - 1.2), 0, 0.95, Z(zb + 1.6), Z(zf - 1.2))
+    box(b, store.wood, X(xc - 1.95), X(xc - 1.15), 0.95, 1.0, Z(zb + 1.55), Z(zf - 1.15))
+    box(b, store.frame, X(xc - 1.75), X(xc - 1.45), 1.0, 1.25, Z(zb + 3.3), Z(zb + 3.65))
+    b.add(
+      new THREE.PlaneGeometry(0.28, 0.18),
+      store.screen,
+      at(X(xc - 1.761), 1.18, Z(zb + 3.47), 0, -Math.PI / 2),
+    )
+    // ホットスナックのケース。黒い台に、ガラスの箱。中は暖かい色の明かりで、揚げ物が並ぶ
+    box(b, store.frame, X(xc - 1.85), X(xc - 1.3), 1.0, 1.08, Z(zb + 4.2), Z(zb + 4.9))
+    box(b, store.frame, X(xc - 1.85), X(xc - 1.3), 1.4, 1.44, Z(zb + 4.2), Z(zb + 4.9))
+    b.add(
+      new THREE.PlaneGeometry(0.66, 0.3),
+      store.hot,
+      at(X(xc - 1.6), 1.24, Z(zb + 4.55), 0, -Math.PI / 2),
+    )
+    box(b, mat.glass, X(xc - 1.84), X(xc - 1.31), 1.08, 1.4, Z(zb + 4.21), Z(zb + 4.89))
+    b.add(
+      new THREE.PlaneGeometry(2.4, 1.0),
+      store.cigarettes,
+      at(X(xc - 0.03), 1.75, Z(zb + 3.0), 0, -Math.PI / 2),
+    )
+    ;[19.5, 23.2].forEach((x) => fixture(X(x), 2.4, Z(-1.0), 0xf6f8ff, 9, 10, null, true))
   }
 
   /**
@@ -296,13 +427,28 @@ export const buildTown = (scene, origin, shared) => {
     sign(shopSignTexture(name, bg, fg), x1 - x0 - 0.6, 0.62, X((x0 + x1) / 2), 3.15, Z(2.93))
   }
   closedShop(10.2, 16.6, '三河屋', '#2a3b5e', '#f1e6c8')
-  // コンビニ。明るいガラスの向こうに棚
+  // コンビニ。ガラスの向こうに、明るい店の中が奥まで見える
   box(b, mat.facade, X(17), X(25.2), 2.9, 7, Z(-6), Z(2.9))
   box(b, mat.white, X(17), X(17.25), 0, 2.9, Z(-6), Z(2.9))
   box(b, mat.white, X(24.95), X(25.2), 0, 2.9, Z(-6), Z(2.9))
-  b.add(new THREE.PlaneGeometry(7.7, 2.7), mat.store, at(X(21.1), 1.35, Z(1.2)))
-  b.add(new THREE.PlaneGeometry(7.7, 2.7), mat.glass, at(X(21.1), 1.35, Z(2.92)))
-  flat(b, mat.white, 0.004, X(17.25), X(24.95), Z(1.2), Z(2.9), 1)
+  buildStore(17.25, 24.95, -4.5, 2.9)
+  b.add(new THREE.PlaneGeometry(7.7, 2.9), mat.glass, at(X(21.1), 1.45, Z(2.92)))
+  ;[19.2, 20.45, 21.75, 23.0].forEach((x) =>
+    box(b, mat.steel, X(x - 0.03), X(x + 0.03), 0, 2.9, Z(2.88), Z(2.97)),
+  )
+  box(b, mat.steel, X(17.25), X(24.95), 2.36, 2.42, Z(2.88), Z(2.97))
+  ;[
+    [18.2, ['からあげ', '', '20%増量中']],
+    [24.0, ['ATM', '', '24時間', 'ご利用いただけます']],
+  ].forEach(([x, lines]) => sign(signTexture(lines, 256, 300), 0.4, 0.47, X(x), 1.9, Z(2.95)))
+  // 店の前のごみ箱
+  ;[
+    [23.55, 0x2e5d8c, ['かん', 'びん']],
+    [24.15, 0x3c6e3c, ['ペット', 'ボトル']],
+  ].forEach(([x, color, lines]) => {
+    box(b, binMat(color), X(x - 0.26), X(x + 0.26), 0, 0.92, Z(3.02), Z(3.46))
+    sign(signTexture(lines, 200, 160), 0.3, 0.24, X(x), 0.7, Z(3.465))
+  })
   sign(
     shopSignTexture('SUNNY MART', '#2b6fb8', '#ffffff', '24時間営業'),
     7.8,
