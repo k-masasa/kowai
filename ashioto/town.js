@@ -72,7 +72,8 @@ export const buildTown = (scene, origin, shared) => {
     lobbyWall: tiled(lobbyStoneTexture(), 1.2, { roughness: 0.3 }),
     mat: new THREE.MeshStandardMaterial({ color: 0x2b2c2e, roughness: 0.95 }),
     button: new THREE.MeshBasicMaterial({ color: 0xffd28a }),
-    frosted: new THREE.MeshBasicMaterial({ color: 0xd9d4c4 }),
+    frosted: new THREE.MeshBasicMaterial({ color: 0xc4bfae }),
+    steelDoor: new THREE.MeshStandardMaterial({ color: 0x9a9d98, roughness: 0.55, metalness: 0.1 }),
     wood: new THREE.MeshStandardMaterial({ color: 0x6b5138, roughness: 0.6 }),
     plant: new THREE.MeshStandardMaterial({ color: 0x2f5a33, roughness: 0.9 }),
     pot: new THREE.MeshStandardMaterial({ color: 0x4a4540, roughness: 0.8 }),
@@ -336,7 +337,7 @@ export const buildTown = (scene, origin, shared) => {
   box(b, mat.wood, X(4.2), X(7.6), 0, 1.05, Z(-1.6), Z(-0.9))
   box(b, mat.white, X(4.15), X(7.65), 1.05, 1.1, Z(-1.65), Z(-0.85))
   sign(
-    signTexture(['受付', '', '夜間は', '守衛室へ'], 256, 220),
+    signTexture(['受付', '', '夜間は', '警備室へ'], 256, 220),
     0.42,
     0.36,
     X(5.9),
@@ -363,14 +364,26 @@ export const buildTown = (scene, origin, shared) => {
       b.add(leaf, mat.plant, at(X(x + dx), y, Z(z + dz)))
     })
   })
-  // 東の壁の、守衛室のドア。小さな窓が明るい
-  box(b, mat.dark, X(7.96), X(8), 0, 2.1, Z(-5.6), Z(-4.7))
+  // 東の壁の、警備室のドア。灰色の鉄のドアに、枠とレバーのノブ。小さなすりガラスの窓が明るい
+  box(b, mat.steelDoor, X(7.965), X(8), 0, 2.1, Z(-5.6), Z(-4.7))
+  box(b, mat.steel, X(7.94), X(8), 2.1, 2.16, Z(-5.66), Z(-4.64))
+  ;[
+    [-5.66, -5.6],
+    [-4.7, -4.64],
+  ].forEach(([a, c]) => box(b, mat.steel, X(7.94), X(8), 0, 2.16, Z(a), Z(c)))
+  box(b, mat.dark, X(7.958), X(7.966), 1.37, 1.73, Z(-5.37), Z(-4.93))
   b.add(
     new THREE.PlaneGeometry(0.4, 0.3),
     mat.frosted,
     at(X(7.955), 1.55, Z(-5.15), 0, -Math.PI / 2),
   )
-  sign(signTexture(['守衛室', ''], 256, 120), 0.36, 0.17, X(7.95), 2.3, Z(-5.15), -Math.PI / 2)
+  b.add(
+    new THREE.CylinderGeometry(0.032, 0.032, 0.02, 16),
+    mat.steel,
+    at(X(7.955), 1.0, Z(-5.48), 0, 0, Math.PI / 2),
+  )
+  box(b, mat.steel, X(7.925), X(7.945), 0.99, 1.01, Z(-5.48), Z(-5.34))
+  sign(signTexture(['警備室', ''], 256, 120), 0.36, 0.17, X(7.95), 2.32, Z(-5.15), -Math.PI / 2)
   // 天井の明かり。夜なので、半分は消えている
   ;[
     [0, -6.5, true],

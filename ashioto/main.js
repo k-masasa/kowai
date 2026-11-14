@@ -831,7 +831,7 @@ const oddDeath = (line) => {
 }
 
 /**
- * 上の踊り場で、顔の無い人が首を振って、鈴の音を探している。歩けば鈴はかすかで、たまに振り向くだけ。
+ * 上の踊り場で、顔の無い人が首を振って、鈴の音を探している。歩けば鈴は鳴らず、近くに来るとたまに振り向くだけ。
  * 走って鈴を大きく鳴らすと、下りてくる。近くまで上がると、明かりのちらつきの間に消える
  */
 const updateSeeker = (f, dt) => {
@@ -857,6 +857,7 @@ const updateSeeker = (f, dt) => {
   // ふだんは首を振って探す。鈴を聞きつけた後は、しばらくこちらを向く
   S.seekerT += dt
   S.heardFor = Math.max(0, S.heardFor - dt)
+  if (S.heardFor <= 0 && d < 6 && dy < 2.4 && Math.random() < dt * 0.3) S.heardFor = 1.4
   const heard = S.heardFor > 0
   const look = heard
     ? Math.atan2(S.pos.x - g.position.x, S.pos.z - g.position.z)
@@ -1194,15 +1195,11 @@ const footstep = () => {
 }
 
 /**
- * 拾った鈴が、ポケットの中で鳴る。歩くと2歩に1度くらいかすかに、走ると毎歩大きく。
- * 上で探している人には、かすかな音でもたまに聞こえて、振り向く
+ * 拾った鈴が、ポケットの中で鳴る。歩いている間は鳴らず、走ると毎歩鳴る
  */
 const ringBell = () => {
-  if (!S.bell) return
-  if (!S.running && Math.random() < 0.5) return
-  sound.suzu(S.running ? 0.16 : 0.03)
-  const near = seeker.group.visible && flat(S.pos, seeker.group.position) < 8
-  if (near && Math.random() < 0.35) S.heardFor = 1.4
+  if (!S.bell || !S.running) return
+  sound.suzu(0.16)
 }
 
 /**
