@@ -289,8 +289,14 @@ export const buildTown = (scene, origin, shared) => {
     b.add(new THREE.PlaneGeometry(c - a, LH), mat.glass, at(X((a + c) / 2), LH / 2, Z(3))),
   )
   b.add(new THREE.PlaneGeometry(2.4, LH - 2.4), mat.glass, at(X(0), 2.4 + (LH - 2.4) / 2, Z(3)))
-  for (let x = -8; x <= 8; x += 1.6)
-    box(b, mat.steel, X(x - 0.04), X(x + 0.04), 0, LH, Z(2.96), Z(3.06))
+  // 縦の枠。自動ドアの通り道 (x = -1.2 から 1.2) では、ドアの上のガラスの部分にだけ置く
+  for (let x = -8; x <= 8; x += 1.6) {
+    const y0 = Math.abs(x) < 1.2 ? 2.46 : 0
+    box(b, mat.steel, X(x - 0.04), X(x + 0.04), y0, LH, Z(2.96), Z(3.06))
+  }
+  ;[-1, 1].forEach((s) =>
+    box(b, mat.steel, X(s * 1.2 - 0.04), X(s * 1.2 + 0.04), 0, 2.46, Z(2.96), Z(3.06)),
+  )
   box(b, mat.steel, X(-8), X(8), 2.38, 2.46, Z(2.96), Z(3.06))
   const lobbyDoors = [-1, 1].map((side) => {
     const g = new THREE.Group()
