@@ -333,13 +333,16 @@ export const makeWalls = (b, mats, segs) => {
 
   /**
    * ぶつかる線を1本足す
+   * @param y0 - 壁の下の高さ。y0 と y1 を渡すと、その高さにいる時だけ当たる (上の階の壁など)
+   * @param y1 - 壁の上の高さ
    */
-  const seg = (axis, c, a0, a1) => {
+  const seg = (axis, c, a0, a1, y0, y1) => {
+    const span = y0 === undefined ? {} : { y0, y1 }
     if (axis === 'x') {
-      segs.push({ ax: a0, az: c, bx: a1, bz: c })
+      segs.push({ ax: a0, az: c, bx: a1, bz: c, ...span })
       return
     }
-    segs.push({ ax: c, az: a0, bx: c, bz: a1 })
+    segs.push({ ax: c, az: a0, bx: c, bz: a1, ...span })
   }
 
   /**
@@ -416,7 +419,7 @@ export const makeWalls = (b, mats, segs) => {
       } else {
         slab(wallMat, axis, c, a0, a1, y0, head, 0.1)
       }
-      seg(axis, c, a0, a1)
+      seg(axis, c, a0, a1, y0, y1)
     })
     slab(wallMat, axis, c, from, to, head + 0.04, y1, kind === 'plaster' ? 0.1 : 0.07)
     slab(mats.frame, axis, c, from, to, head, head + 0.04, 0.1)
@@ -482,7 +485,7 @@ export const makeWalls = (b, mats, segs) => {
     layer(spec.mat ?? mats.siding, axis, c + out * 0.035, from, to, y0, y1, 0.07, holes)
     layer(spec.inner ?? mats.plaster, axis, c - out * 0.035, from, to, y0, y1, 0.07, holes)
     holes.forEach((h) => opening(axis, c, h, 0.16))
-    collide(axis, c, from, to, holes)
+    collide(axis, c, from, to, holes, y0, y1)
   }
 
   /**
@@ -493,15 +496,15 @@ export const makeWalls = (b, mats, segs) => {
     const { axis, at: c, from, to, y0, y1, mat, holes = [] } = spec
     layer(mat, axis, c, from, to, y0, y1, spec.t ?? 0.08, holes)
     if (spec.collide === false) return
-    collide(axis, c, from, to, holes)
+    collide(axis, c, from, to, holes, y0, y1)
   }
 
   /**
    * 壁にぶつかる線を足す。戸口 (door) の所だけ通れる
    */
-  const collide = (axis, c, from, to, holes) => {
+  const collide = (axis, c, from, to, holes, y0, y1) => {
     const doors = holes.filter((h) => h.door).map((h) => [h.from, h.to])
-    remain(from, to, doors).forEach(([a0, a1]) => seg(axis, c, a0, a1))
+    remain(from, to, doors).forEach(([a0, a1]) => seg(axis, c, a0, a1, y0, y1))
   }
 
   return { inner, outer, solid, slab, seg, rect, post }

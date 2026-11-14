@@ -36,6 +36,7 @@ const LEG = 0.05
 const TUB = new THREE.CylinderGeometry(0.42, 0.4, 0.58, 24)
 const TUB_WATER = new THREE.CircleGeometry(0.38, 24)
 const DIAL = new THREE.CylinderGeometry(0.052, 0.052, 0.008, 20)
+const KNOB = new THREE.SphereGeometry(0.028, 10, 8)
 
 /**
  * x, y, z の点を作る
@@ -510,7 +511,7 @@ const buildMain = (c) => {
 }
 
 /**
- * 北の家。1階はものおきで、東の壁ぞいに2階へ上がる階段がある。2階はまだ分からないので、上がれない
+ * 北の家。1階はものおきで、東の壁ぞいに2階へ上がる階段がある。上がった所の左 (西) に扉、右 (東) に窓。扉の先の部屋はまだ分からないので、あかない
  */
 const buildNorth = (c) => {
   const { b, mats, W } = c
@@ -524,7 +525,6 @@ const buildNorth = (c) => {
   const loft = 2.95
   box(b, mats.doma, x0, x1, 0, floor, z0, z1)
   c.floors.push({ x0, x1, z0, z1, h: floor, s: 'hard' })
-  c.places.push({ name: '北のものおき', x0, x1, z0, z1 })
 
   // 外壁。南の壁の、台所の戸口から母屋へ入る
   W.outer({
@@ -565,7 +565,7 @@ const buildNorth = (c) => {
     holes: [
       { from: -12.55, to: -11.7, y0: floor, y1: 2.0, door: true },
       { from: -7.2, to: -6.2, y0: 1.0, y1: 1.9 },
-      { from: -9.8, to: -8.4, y0: 3.9, y1: 4.8 },
+      { from: -11.05, to: -10.2, y0: loft + 0.9, y1: loft + 1.75 },
     ],
   })
   W.outer({
@@ -594,9 +594,49 @@ const buildNorth = (c) => {
   flat(b, mats.attic, loft, x0, x1, z0, hz0, 1)
   flat(b, mats.attic, loft, x0, x1, hz1, z1, 1)
   flat(b, mats.attic, loft, x0, hx0, hz0, hz1, 1)
-  // 2階へ上がる階段。台所の戸口から入って、そのまま北へ上がる
-  stairs(b, mats.board, 0.97, 1.75, -10.0, -6.4, floor, loft, 14, '-z')
-  W.rect(0.95, 1.82, -10.02, -6.38)
+  // 2階へ上がる階段。台所の戸口から入って、そのまま北へ上がる。足元の高さは、段の高さをなめらかにつなぐ
+  const [sx0, sx1, sz0, sz1] = [0.97, 1.75, -10.0, -6.4]
+  stairs(b, mats.board, sx0, sx1, sz0, sz1, floor, loft, 14, '-z')
+  c.floors.push(
+    {
+      x0: sx0,
+      x1: sx1,
+      z0: sz0,
+      z1: sz1,
+      h: (x, z) => floor + ((sz1 - z) / (sz1 - sz0)) * (loft - floor),
+      s: 'board',
+    },
+    { x0: hx0, x1, z0: -11.2, z1: sz0, h: loft, s: 'board' },
+  )
+  W.seg('z', sx0, sz0, sz1)
+  tube(b, mats.frame, v(1.0, floor + 0.85, sz1 - 0.05), v(1.0, loft + 0.85, sz0), 0.02)
+  box(b, mats.frame, 0.98, 1.02, floor, floor + 0.85, sz1 - 0.07, sz1 - 0.03)
+  // 穴のふち
+  box(b, mats.post, hx0 - 0.05, hx0 + 0.05, 2.8, loft, hz0, hz1)
+  box(b, mats.post, hx0, x1, 2.8, loft, hz1 - 0.05, hz1 + 0.05)
+  // 2階。階段のまわりと、上がった所の壁。左 (西) の壁に扉
+  const upTop = 5.2
+  /**
+   * 2階の壁 (2階の床から天井まで)
+   */
+  const up = (axis, pos, from, to) =>
+    W.inner({ axis, at: pos, from, to, y0: loft, y1: upTop, kind: 'plaster' })
+  up('z', hx0, -11.2, hz1)
+  up('x', hz1, hx0, x1)
+  up('x', -11.2, hx0, x1)
+  flat(b, mats.ceiling, upTop, hx0, x1, -11.2, hz1, -1)
+  box(b, mats.darkWood, 0.96, 0.99, loft, loft + 1.85, -11.05, -10.2)
+  box(b, mats.frame, 0.95, 1.0, loft + 1.85, loft + 1.9, -11.08, -10.17)
+  b.add(KNOB, mats.stainless, at(1.01, loft + 0.95, -10.33))
+  bulb(b, mats, c.fixtures, 1.36, -10.6, upTop)
+  // 1階の、上がった所の下は物入れ (入れない)
+  W.inner({ axis: 'z', at: hx0, from: -11.2, to: sz0, y0: floor, y1: 2.8, kind: 'plaster' })
+  W.inner({ axis: 'x', at: -11.2, from: hx0, to: x1, y0: floor, y1: 2.8, kind: 'plaster' })
+  c.places.push(
+    { name: '北の家の2階', x0: hx0, x1, z0: -11.2, z1: sz0 },
+    { name: '北の家の階段', x0: sx0, x1: sx1, z0: sz0, z1: sz1 },
+    { name: '北のものおき', x0, x1, z0, z1 },
+  )
 
   // ものおきの中。棚、たんす、箱
   shelf(c, mats.furniture, x0 + 0.1, x0 + 0.6, -12.5, -10.1, floor, 2.0, 3)

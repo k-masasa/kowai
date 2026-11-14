@@ -4,11 +4,14 @@
 const RADIUS = 0.22
 // これより高い段は上れない (m)。家の床 (地面から 50 cm) には、石段や踏み台を使って上がる
 const STEP = 0.45
+// 体の、ひざと頭の高さ (足元から m)。高さの範囲を持った壁は、この間にかかる時だけ当たる
+const KNEE = 0.3
+const HEAD = 1.6
 
 /**
  * 当たる線と床から、プレイヤーの動きを決める
- * @param walls - 当たる線の並び。{ ax, az, bx, bz }
- * @param floors - 床の四角の並び。{ x0, x1, z0, z1, h, s }。h は高さ、s は足音の種類。重なる所では、あとにある方を使う
+ * @param walls - 当たる線の並び。{ ax, az, bx, bz, y0, y1 }。y0 と y1 (壁の下と上) があれば、その高さにいる時だけ当たる
+ * @param floors - 床の四角の並び。{ x0, x1, z0, z1, h, s }。h は高さ (階段のように、(x, z) から高さを返す関数でもよい)、s は足音の種類。重なる所では、あとにある方を使う
  */
 export const createWalker = (walls, floors) => {
   /**
@@ -25,17 +28,27 @@ export const createWalker = (walls, floors) => {
   }
 
   /**
-   * その場所の床の高さ
+   * 床の四角の、その場所の高さ
    */
-  const heightAt = (x, z) => floorAt(x, z)?.h ?? 0
+  const heightOf = (f, x, z) => (typeof f.h === 'function' ? f.h(x, z) : f.h)
 
   /**
-   * 壁にめりこんでいたら、壁から体の太さの分だけ押し戻す
+   * その場所の床の高さ
    */
-  const pushOut = (p) => {
+  const heightAt = (x, z) => {
+    const f = floorAt(x, z)
+    return f ? heightOf(f, x, z) : 0
+  }
+
+  /**
+   * 壁にめりこんでいたら、壁から体の太さの分だけ押し戻す。ほかの階の壁には当たらない
+   * @param feet - 足元の高さ
+   */
+  const pushOut = (p, feet) => {
     for (let k = 0; k < 4; k++) {
       let moved = false
       walls.forEach((w) => {
+        if (w.y0 !== undefined && (feet + HEAD < w.y0 || feet + KNEE > w.y1)) return
         const dx = w.bx - w.ax
         const dz = w.bz - w.az
         const len2 = dx * dx + dz * dz
@@ -58,9 +71,9 @@ export const createWalker = (walls, floors) => {
    */
   const reach = (x, z, feet) => {
     const p = { x, z }
-    pushOut(p)
+    pushOut(p, feet)
     const f = floorAt(p.x, p.z)
-    const h = f?.h ?? 0
+    const h = f ? heightOf(f, p.x, p.z) : 0
     if (h - feet > STEP) return null
     return { x: p.x, z: p.z, h, s: f?.s ?? 'ground' }
   }
