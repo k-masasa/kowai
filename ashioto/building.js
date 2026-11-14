@@ -47,7 +47,7 @@ import {
 // 階段は1段の幅が 1.5m の折り返し。西の列 (SX0 ~ DIV0) と東の列 (DIV1 ~ SX1)
 export const FH = 2.9
 export const HALF = FH / 2
-export const FLOORS = 4
+export const FLOORS = 20
 export const UNITS = 12
 const CEIL = 2.5
 const STEPS = 8
@@ -345,6 +345,16 @@ export const buildBuilding = (scene) => {
   const root = new THREE.Group()
   scene.add(root)
   const b = makeBuilder()
+  // 階ごとの部品 (扉、窓、照明の光る部分など) の入れ物。遠い階は main.js で隠して、描く数を減らす
+  const floorGroups = []
+  const layerFor = (f) => {
+    if (!floorGroups[f]) {
+      floorGroups[f] = new THREE.Group()
+      root.add(floorGroups[f])
+    }
+    return floorGroups[f]
+  }
+  let layer = root
 
   const mat = {
     paint: tiled(wallTexture(), 2.0),
@@ -479,8 +489,9 @@ export const buildBuilding = (scene) => {
   const frames = [0xb9bcc0, 0x2a2b2d, 0xd9d9d6, 0x8e2a24, 0x2c4f7c, 0x7f9c86].map(
     (color) => new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.5 }),
   )
-  const plates = [1, 2, 3, 4].map(
-    (f) => new THREE.MeshStandardMaterial({ map: plateAtlas(f), roughness: 0.5 }),
+  const plates = Array.from(
+    { length: FLOORS },
+    (_, k) => new THREE.MeshStandardMaterial({ map: plateAtlas(k + 1), roughness: 0.5 }),
   )
   const frosted = {
     dark: new THREE.MeshStandardMaterial({ map: frostedTexture('dark'), roughness: 0.3 }),
@@ -538,7 +549,7 @@ export const buildBuilding = (scene) => {
     )
     glow.position.set(x, y - 0.062, z)
     glow.rotation.x = Math.PI / 2
-    root.add(glow)
+    layer.add(glow)
     return fixture(x, y - 0.25, z, color, power, dist, glow)
   }
 
@@ -553,7 +564,7 @@ export const buildBuilding = (scene) => {
     )
     glow.position.set(x + dx * 0.17, y, z + dz * 0.17)
     glow.scale.set(1, 0.6, 1)
-    root.add(glow)
+    layer.add(glow)
     return fixture(x + dx * 0.45, y - 0.1, z + dz * 0.45, color, power, dist, glow)
   }
 
@@ -906,7 +917,7 @@ export const buildBuilding = (scene) => {
     const pane = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.8), wire.plain)
     pane.position.set(-0.205, y, -4.2)
     pane.rotation.y = -Math.PI / 2
-    root.add(pane)
+    layerFor(f).add(pane)
   }
 
   // ---------- 各階 ----------
@@ -915,6 +926,7 @@ export const buildBuilding = (scene) => {
   for (let f = 1; f <= FLOORS; f++) {
     const y = floorY(f)
     const ground = f === 1
+    layer = layerFor(f)
 
     // 床と、下の階の天井になる床版
     if (!ground) {
@@ -964,7 +976,7 @@ export const buildBuilding = (scene) => {
       panel.position.set(5.0 + side * 0.25, y + 1.05, BACK_Z - 0.03)
       panel.userData.home = panel.position.x
       panel.userData.side = side
-      root.add(panel)
+      layer.add(panel)
       return panel
     })
     lifts.push({ floor: f, doors: liftDoors })
@@ -1010,7 +1022,7 @@ export const buildBuilding = (scene) => {
       // ドア
       const leaf = makeLeaf(0.9, 2.025)
       leaf.group.position.set(xd, y, CZ - 0.03)
-      root.add(leaf.group)
+      layer.add(leaf.group)
       // ドアの奥は暗くふさぐ。412号室だけは、奥に玄関と廊下がある
       const isHome = f === FLOORS && i === UNITS - 1
       if (!isHome) wallZ(b, mat.black, CZ - 0.19, xd - 0.48, xd + 0.48, y, y + 2.05, 1)
@@ -1033,7 +1045,7 @@ export const buildBuilding = (scene) => {
         lit ? frosted.lit : frosted.dark,
       )
       pane.position.set(wx, y + 1.62, CZ + 0.006)
-      root.add(pane)
+      layer.add(pane)
       windows.push({
         mesh: pane,
         normal: lit ? frosted.lit : frosted.dark,
@@ -1068,6 +1080,8 @@ export const buildBuilding = (scene) => {
     zones.push(zone(`C${f}`, HX1 - 0.7, CX1 - 0.25, CZ + 0.25, -0.25, () => y))
     zones.push(zone(`D${f}`, SX1 - 0.5, SX1 + 0.5, DOORWAY[0] + 0.25, DOORWAY[1] - 0.25, () => y))
   }
+
+  layer = root
 
   // 412号室の中 (最後に入る)。玄関のたたきと靴箱、上がり框の先にまっすぐ廊下が伸び、
   // 両側に部屋のドア、突き当たりに明かりの点いた居間のガラス戸がある
@@ -1300,6 +1314,7 @@ export const buildBuilding = (scene) => {
   for (let f = 1; f <= FLOORS + 1; f++) {
     const y = floorY(f)
     const roof = f === FLOORS + 1
+    layer = layerFor(f)
     const wallTop = roof ? y + CEIL : y + FH
     // 各階の踊り場
     box(b, mat.concrete, SX0 + 0.01, SX1 - 0.01, y - 0.25, y, LAND_Z, -0.01)
@@ -1325,7 +1340,7 @@ export const buildBuilding = (scene) => {
     )
     plaque.position.set(1.0, y + 1.65, -0.006)
     plaque.rotation.y = Math.PI
-    root.add(plaque)
+    layer.add(plaque)
     signs.push({ floor: f, draw: sign.draw, label: roof ? 'R' : `${f}F` })
     // 踊り場の照明。屋上の階のは古くて、ときどきちらつく
     const landLamp = wallLight(SX1 - 0.6, y + 2.25, 0, 0, -1, 0xffe7c9, 3, 5.5)
@@ -1343,7 +1358,7 @@ export const buildBuilding = (scene) => {
     panel.position.set(0, 1.025, 0.5)
     door.add(panel)
     door.rotation.y = Math.PI
-    root.add(door)
+    layer.add(door)
     fireDoors.push({ floor: f, group: door })
 
     // 中間の踊り場と、その窓と照明
@@ -1351,7 +1366,7 @@ export const buildBuilding = (scene) => {
     const pane = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.8), wire.plain)
     pane.position.set(SX0 + 0.006, y + HALF + 1.4, -4.2)
     pane.rotation.y = Math.PI / 2
-    root.add(pane)
+    layer.add(pane)
     windows.push({
       mesh: pane,
       normal: wire.plain,
@@ -1441,6 +1456,8 @@ export const buildBuilding = (scene) => {
       ),
     )
   }
+
+  layer = root
 
   // ---------- 古び ----------
   // 雨だれ、床の端の汚れ、天井の雨じみ。どれも透ける絵を面に重ねて貼る
@@ -1551,6 +1568,7 @@ export const buildBuilding = (scene) => {
     entrance,
     room,
     homeLamps,
+    floorGroups,
     lifts,
     car,
     carLamp,

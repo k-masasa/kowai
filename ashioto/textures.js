@@ -400,14 +400,8 @@ export const plateAtlas = (floor) =>
       ctx.strokeStyle = '#6f6a60'
       ctx.lineWidth = 4
       ctx.strokeRect(x + 6, 6, 116, 68)
-      centerText(
-        ctx,
-        `${floor}${String(i + 1).padStart(2, '0')}`,
-        x + 64,
-        42,
-        `600 46px ${GOTHIC}`,
-        '#24211d',
-      )
+      const num = `${floor}${String(i + 1).padStart(2, '0')}`
+      centerText(ctx, num, x + 64, 42, `600 ${num.length > 3 ? 38 : 46}px ${GOTHIC}`, '#24211d')
     }
   })
 

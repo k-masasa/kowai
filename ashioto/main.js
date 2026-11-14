@@ -7,8 +7,8 @@ import { createPerson } from './people.js'
 import { createSound } from './sound.js'
 
 // あしおと
-// 夜、マンションの前の道から歩いて帰る。階段を上がって、4階の廊下の一番奥の412号室に入れば終わり。
-// ふつう以上では、3階から4階へ上がったはずなのに、また3階に出ることがある。最後は4階の廊下で、
+// 夜、マンションの前の道から歩いて帰る。エレベーターは点検中なので、階段で20階まで上がり、
+// 廊下の一番奥の2012号室に入れば終わり。ふつう以上では、上がったはずなのに同じ階に出ることがある。最後は20階の廊下で、
 // 見ていない間だけ近づく顔の無い人から逃げる。時刻、遊んだ回数、タブを離れていた時間を使う。データは外に出さない。
 
 const EYE = 1.55
@@ -20,9 +20,9 @@ const RUN_STRIDE = 0.86
 const STORE = 'kowai.ashioto'
 // 階段でこれだけ下りると死ぬ (m)
 const BACK_LIMIT = 6
-// 4階の廊下でここを過ぎたら、追いかけが始まる (x)
+// 20階の廊下でここを過ぎたら、追いかけが始まる (x)
 const CHASE_X = 24
-// 1階から3階の廊下で、ここを過ぎると奥から明かりが消え、ここを過ぎると襲われる (x)
+// 20階より下の廊下で、ここを過ぎると奥から明かりが消え、ここを過ぎると襲われる (x)
 const WRONG_WARN = 8.2
 const WRONG_DEATH = 11.6
 // 階段ですれ違う人が、次に出てくるまでの秒数 (最短、ばらつき)
@@ -32,7 +32,7 @@ const WALKER_GAP = [26, 22]
 // days: 何日続けて帰れたら終わりか。途中でつかまったら、1日目からやり直し
 // start: 追いかけの最初の距離、walk: 見ていない間の速さ、rush: 停電の間の速さ
 // gap: 停電の間隔 (遠い時、近い時)、dark: 停電の長さ (最短、ばらつき)、flash: 懐中電灯の明るさ
-// strict: 階段を下り続けると死ぬか、repeat: 3階が続く回数
+// strict: 階段を下り続けると死ぬか、repeat: 1日のうちに、上がったはずが同じ階に出る回数
 // events: たまに起こる出来事。torch (懐中電灯が切れる) と peek (窓から覗く) は間隔 (最短、ばらつき) の秒数、
 // knob (ドアノブが鳴る) は、ドアの目の前まで来た時に鳴る確率
 const NORMAL = {
@@ -44,7 +44,7 @@ const NORMAL = {
   dark: [0.2, 0.28],
   flash: 5.5,
   strict: true,
-  repeat: 4,
+  repeat: 2,
   events: { torch: [15, 15], knob: 0.1, peek: [10, 10] },
 }
 const LEVELS = {
@@ -110,10 +110,12 @@ const dayState = () => ({
   lastSecond: -1,
   noticeStage: -1,
   inside: false,
-  onFourth: false,
+  onTop: false,
   loops: 0,
-  repeatLeft: 0,
+  repeatAt: [],
   looping: false,
+  loopFloor: 0,
+  aheadFloor: 0,
   ahead: false,
   vanishIn: 0,
   final: false,
@@ -220,7 +222,7 @@ const homeDoor = building.doors.find((d) => d.home)
 const eye = new THREE.Vector3()
 
 /**
- * 今の怖さの段階。3階が繰り返すたび、日を重ねるたびに上がる
+ * 今の怖さの段階。同じ階が続くたび、日を重ねるたびに上がる
  */
 const level = () => S.loops + S.head + (S.day - 1)
 
@@ -281,9 +283,9 @@ const greetingText = () => {
  * 段階ごとの、エントランスの貼り紙の文面
  */
 const noticeLines = (stage) => {
-  if (stage === 2) return ['412号室の方へ', '', '足音が、', 'ふたり分します。']
+  if (stage === 2) return ['2012号室の方へ', '', '足音が、', 'ふたり分します。']
   if (stage === 1) {
-    return ['412号室の方へ', '', '夜中の足音が', 'ひびいています。', '静かに歩いて', 'ください。']
+    return ['2012号室の方へ', '', '夜中の足音が', 'ひびいています。', '静かに歩いて', 'ください。']
   }
   return [
     'お知らせ',
@@ -382,7 +384,7 @@ const fadeIn = (seconds) => {
 const resetWorld = () => {
   if (S.peekWin) S.peekWin.mesh.material = S.peekWin.normal
   Object.assign(S, dayState())
-  S.repeatLeft = S.level.repeat
+  S.repeatAt = pickRepeats(S.level.repeat)
   const ev = S.level.events
   if (ev) {
     S.torchIn = nextIn(ev.torch)
@@ -424,7 +426,7 @@ const startDay = (n) => {
   sound.setDrone(0.12)
   updateNotice()
   if (S.level.events && Math.random() < 0.45 + 0.2 * (n - 1)) showLampFigure()
-  const goal = n === 1 ? '4階の、412号室に帰る。' : '今日も、412号室に帰る。'
+  const goal = n === 1 ? '20階の、2012号室に帰る。' : '今日も、2012号室に帰る。'
   setTimeout(() => whisper(goal, 4200), 1800)
   if (S.locked && document.pointerLockElement !== renderer.domElement) pause()
 }
@@ -513,11 +515,25 @@ const setDark = (dark) => {
 }
 
 /**
- * 3階と4階の間の踊り場に、背中を向けて立たせる
+ * 同じ階が何日続く日を、ばらばらに決める。f 階から上がる時に、また f 階に出る
+ * @param n - その日に、同じ階が続く回数
  */
-const showAhead = () => {
+const pickRepeats = (n) => {
+  const floors = []
+  while (floors.length < n) {
+    const f = 4 + Math.floor(Math.random() * (FLOORS - 7))
+    if (!floors.includes(f)) floors.push(f)
+  }
+  return floors
+}
+
+/**
+ * f 階の上の、中間の踊り場に、背中を向けて立たせる
+ */
+const showAhead = (f) => {
   S.ahead = true
-  figure.group.position.set(0.9, floorY(3) + FH / 2, -4.35)
+  S.aheadFloor = f
+  figure.group.position.set(0.95, floorY(f) + FH / 2, -4.35)
   figure.randomPose(0)
   figure.group.rotation.y = Math.PI
   figure.group.visible = true
@@ -544,43 +560,47 @@ const updateAhead = (dt) => {
   }
   const fp = figure.group.position
   if (Math.abs(fp.y - S.feet) > 2.2 || flat(fp, S.pos) > 3.2) return
-  const lamp = building.fixtures.find((f) => f.stair === 3.5)
+  const lamp = building.fixtures.find((f) => f.stair === S.aheadFloor + 0.5)
   if (lamp) lamp.stutter = 0.5
   sound.flicker()
   S.vanishIn = 0.12
 }
 
 /**
- * 3階から4階へ上がったはずが、また3階に出た
+ * f 階から上がったはずが、また f 階に出た。1回目は先の踊り場に人が立ち、2回目からは下の階段の明かりが消える
  */
-const onLoop = () => {
+const onRepeat = (f) => {
   S.loops += 1
   sound.whisper()
   updateNotice()
-  if (S.loops >= 2) {
-    S.clockFrozen = true
-    building.fixtures.forEach((f) => {
-      if (f.stair && f.stair < 3) f.on = false
-    })
-  }
-  if (S.loops === 2) showAhead()
-  if (S.loops >= 3) {
-    building.fixtures.forEach((f) => {
-      if (f.stair === 3 || f.stair === 3.5) f.faulty = true
-    })
-  }
+  if (S.loops === 1) showAhead(f)
+  if (S.loops < 2) return
+  S.clockFrozen = true
+  building.fixtures.forEach((lamp) => {
+    if (lamp.stair && lamp.stair < f) lamp.on = false
+    if (lamp.stair === f || lamp.stair === f + 0.5) lamp.faulty = true
+  })
 }
 
 /**
- * 階段の場所が変わった時の出来事。3階と4階の間の踊り場で、次に着く階を決める
+ * 階段の場所が変わった時の出来事。中間の踊り場で、上の階に着いたらそっくりな同じ階へ移すかを決める
  */
 const onStairs = () => {
-  if (S.tag === 'M3' && S.prevTag === 'A3' && !S.looping && S.repeatLeft > 0) {
-    S.looping = true
-    building.signs.find((s) => s.floor === 4).draw('3F')
+  const mid = /^M(\d+)$/.exec(S.tag)
+  const from = /^A(\d+)$/.exec(S.prevTag)
+  if (mid && from && mid[1] === from[1] && !S.looping) {
+    const f = Number(mid[1])
+    const k = S.repeatAt.indexOf(f)
+    if (k >= 0) {
+      S.repeatAt.splice(k, 1)
+      S.looping = true
+      S.loopFloor = f
+      building.signs.find((s) => s.floor === f + 1).draw(`${f}F`)
+    }
   }
-  if (S.tag !== 'L4' || !S.looping) return
-  // 4階に着いた瞬間に、そっくりな3階へ移す
+  if (!S.looping || S.tag !== `L${S.loopFloor + 1}`) return
+  // 上の階に着いた瞬間に、そっくりな下の階へ移す
+  const f = S.loopFloor
   S.feet -= FH
   if (S.ahead) figure.group.position.y -= FH
   if (S.walker) {
@@ -590,17 +610,16 @@ const onStairs = () => {
     person.group.position.y -= FH
   }
   S.looping = false
-  S.repeatLeft -= 1
-  building.signs.find((s) => s.floor === 4).draw('4F')
-  S.tag = 'L3'
-  onLoop()
+  building.signs.find((s) => s.floor === f + 1).draw(`${f + 1}F`)
+  S.tag = `L${f}`
+  onRepeat(f)
 }
 
 /**
- * 4階に着いた。412号室のドアが少し開いて、明かりが漏れている
+ * 20階に着いた。2012号室のドアが少し開いて、明かりが漏れている
  */
-const reachFourth = () => {
-  S.onFourth = true
+const reachTop = () => {
+  S.onTop = true
   homeDoor.hinge.rotation.y = -0.6
   building.room.visible = true
   building.homeLamps.forEach((lamp) => {
@@ -617,11 +636,11 @@ const reachFourth = () => {
 const startChase = () => {
   if (S.lift) endLift()
   S.final = true
-  building.zones.find((z) => z.tag === 'D4').on = false
+  building.zones.find((z) => z.tag === `D${FLOORS}`).on = false
   S.slamFor = 0.35
   sound.slam(0.6)
   const x = Math.max(7.3, S.pos.x - S.level.start)
-  figure.group.position.set(x, floorY(4), -0.7)
+  figure.group.position.set(x, floorY(FLOORS), -0.7)
   figure.randomPose(0)
   figure.face(S.pos)
   figure.group.visible = true
@@ -631,12 +650,12 @@ const startChase = () => {
 }
 
 /**
- * 4階の防火扉を閉める動き
+ * 20階の防火扉を閉める動き
  */
 const updateSlam = (dt) => {
   if (S.slamFor <= 0) return
   S.slamFor = Math.max(0, S.slamFor - dt)
-  const door = building.fireDoors.find((d) => d.floor === 4)
+  const door = building.fireDoors.find((d) => d.floor === FLOORS)
   door.group.rotation.y = Math.PI * (S.slamFor / 0.35)
 }
 
@@ -668,7 +687,7 @@ const onStop = () => {
 }
 
 /**
- * 412号室に入った。ドアを開けて中に入る。最後の日なら、暗転のあとにノックを鳴らす。
+ * 2012号室に入った。ドアを開けて中に入る。最後の日なら、暗転のあとにノックを鳴らす。
  * まだ続く時は、次の日を始める
  */
 const goHome = () => {
@@ -758,7 +777,7 @@ const downDeath = () => {
 }
 
 /**
- * 1階から3階の廊下の奥へ行こうとして、うしろから襲われた。振り向かせて、目の前に顔を出す
+ * 20階より下の廊下の奥へ行こうとして、うしろから襲われた。振り向かせて、目の前に顔を出す
  */
 const wrongDeath = () => {
   S.yaw += Math.PI
@@ -778,12 +797,12 @@ const endWrongWay = () => {
 }
 
 /**
- * 1階から3階の廊下に入った時。奥から明かりが消えていき、さらに進むと、うしろから襲われる。
+ * 20階より下の廊下に入った時。奥から明かりが消えていき、さらに進むと、うしろから襲われる。
  * かんたんでは、明かりが消えるだけ
  */
 const updateWrongWay = (dt) => {
-  const m = /^C([123])$/.exec(S.tag)
-  if (!m) {
+  const m = /^C(\d+)$/.exec(S.tag)
+  if (!m || Number(m[1]) >= FLOORS) {
     if (S.wrong) endWrongWay()
     return
   }
@@ -845,7 +864,7 @@ const walkSounds = (dist) => {
 }
 
 /**
- * 場所に応じた出来事。建物に入る、階段、4階、追いかけ、412号室
+ * 場所に応じた出来事。建物に入る、階段、20階、追いかけ、2012号室
  */
 const onPlace = () => {
   if (!S.inside && S.tag === 'H1' && S.pos.z < -0.8) {
@@ -854,10 +873,12 @@ const onPlace = () => {
     sound.slam(0.25)
   }
   onStairs()
-  if (!S.onFourth && !S.looping && (S.tag === 'H4' || S.tag === 'C4')) reachFourth()
-  if (S.onFourth && !S.final && S.tag === 'C4' && S.pos.x > CHASE_X) startChase()
-  const atHome = S.tag === 'C4' && Math.abs(S.pos.x - homeDoor.x) < 0.45 && S.pos.z < -0.95
-  if (S.onFourth && atHome) goHome()
+  const topHall = `H${FLOORS}`
+  const topCorridor = `C${FLOORS}`
+  if (!S.onTop && !S.looping && (S.tag === topHall || S.tag === topCorridor)) reachTop()
+  if (S.onTop && !S.final && S.tag === topCorridor && S.pos.x > CHASE_X) startChase()
+  const atHome = S.tag === topCorridor && Math.abs(S.pos.x - homeDoor.x) < 0.45 && S.pos.z < -0.95
+  if (S.onTop && atHome) goHome()
 }
 
 /**
@@ -1091,14 +1112,14 @@ const liftDeath = () => {
 }
 
 /**
- * ふつう以上で、2階から4階のホールに入った時に、たまにエレベーターが着く。
+ * ふつう以上で、2階から上のホールに入った時に、たまにエレベーターが着く。
  * 扉が開いている間に近づくと、引きずり込まれる
  */
 const updateLift = (dt) => {
   if (!S.level.events || S.final) return
   if (!S.lift) {
-    const m = /^H([2-4])$/.exec(S.tag)
-    if (!m || S.liftDone || S.ahead) return
+    const m = /^H(\d+)$/.exec(S.tag)
+    if (!m || Number(m[1]) < 2 || S.liftDone || S.ahead) return
     S.liftDone = true
     if (Math.random() < 0.45) startLift(Number(m[1]))
     return
@@ -1136,7 +1157,7 @@ const updateOddities = (dt) => {
       vend.stutter = 0.35
     }
   }
-  if (S.tag !== 'L5') return
+  if (S.tag !== `L${FLOORS + 1}`) return
   S.roofTime += dt
   if (S.knocked || S.roofTime < 2.5) return
   S.knocked = true
@@ -1252,7 +1273,7 @@ const updatePeek = (dt) => {
  * いる階段の階の番号。踊り場ならその階、階段ならその階から上へ向かう途中。階段でなければ 0
  */
 const stairFloor = () => {
-  const m = /^[LAMB](\d)$/.exec(S.tag)
+  const m = /^[LAMB](\d+)$/.exec(S.tag)
   return m ? Number(m[1]) : 0
 }
 
@@ -1273,15 +1294,18 @@ const exitPath = (from) => {
 }
 
 /**
- * 1階のホールから階段を上がり、f 階の廊下の部屋に入っていく道すじ
+ * from 階の踊り場から階段を上がり、f 階の廊下の部屋に入っていく道すじ。from が1なら、1階のホールから
  */
-const homePath = (f, unit) => {
-  const pts = [
-    new THREE.Vector3(4.6, 0, -0.9),
-    new THREE.Vector3(SX1 + 1.0, 0, -1.3),
-    new THREE.Vector3(SX1, 0, -0.8),
-  ]
-  for (let k = 1; k < f; k++) pts.push(...descentPath(k).reverse())
+const homePath = (from, f, unit) => {
+  const pts =
+    from === 1
+      ? [
+          new THREE.Vector3(4.6, 0, -0.9),
+          new THREE.Vector3(SX1 + 1.0, 0, -1.3),
+          new THREE.Vector3(SX1, 0, -0.8),
+        ]
+      : []
+  for (let k = from; k < f; k++) pts.push(...descentPath(k).reverse())
   const y = floorY(f)
   const x = doorX(unit)
   pts.push(
@@ -1295,17 +1319,17 @@ const homePath = (f, unit) => {
 }
 
 /**
- * 階段に、人を1人出す。上から下りて外へ出ていく人と、下から上がって2階の部屋に帰る人がいる。
+ * 階段に、人を1人出す。2階上から下りて外へ出ていく人と、2階下から上がって1つ下の階の部屋に帰る人がいる。
  * 下りてくる人の一部は、おかしな人
  * @param force - 確かめる時だけ使う。{ strange, up } で出し方を決める
  */
 const spawnWalker = (force = {}) => {
   const pf = Math.max(1, stairFloor())
-  const up = force.up ?? (pf >= 3 && Math.random() < 0.35)
+  const up = pf >= 3 && (force.up ?? Math.random() < 0.35)
   const chance = Math.min(0.7, 0.25 + 0.12 * (S.day - 1) + 0.08 * S.loops)
   const strange = !up && (force.strange ?? Math.random() < chance)
   const unit = Math.floor(Math.random() * UNITS)
-  const path = up ? homePath(2, unit) : exitPath(Math.min(4, pf + (pf >= 2 ? 1 : 2)))
+  const path = up ? homePath(pf - 2, pf - 1, unit) : exitPath(Math.min(FLOORS, pf + 2))
   S.walker = {
     path,
     seg: 0,
@@ -1313,6 +1337,7 @@ const spawnWalker = (force = {}) => {
     strange,
     up,
     unit,
+    home: pf - 1,
     phase: 0,
     lastStep: 0,
     mode: 'walk',
@@ -1352,7 +1377,7 @@ const finishWalker = () => {
   const w = S.walker
   hideWalker()
   if (!w.up) return
-  const door = building.doors.find((d) => d.floor === 2 && d.num === 200 + w.unit + 1)
+  const door = building.doors.find((d) => d.floor === w.home && d.num === w.home * 100 + w.unit + 1)
   if (!door) return
   door.hinge.rotation.y = -0.9
   sound.creak()
@@ -1407,7 +1432,7 @@ const updateWalker = (dt) => {
   const w = S.walker
   if (!w) {
     const pf = stairFloor()
-    if (!pf || pf >= 4) return
+    if (!pf || pf >= FLOORS) return
     S.walkerIn -= dt
     if (S.walkerIn > 0) return
     S.walkerIn = nextIn(WALKER_GAP)
@@ -1415,6 +1440,11 @@ const updateWalker = (dt) => {
     return
   }
   const g = person.group
+  // 2階分より離れたら、もう見えないので消す
+  if (Math.abs(g.position.y - S.feet) > FH * 2.2 && w.seg > 2) {
+    hideWalker()
+    return
+  }
   headPoint.copy(g.position)
   headPoint.y += 1.62
   const d = headPoint.distanceTo(eye)
@@ -1549,7 +1579,7 @@ const updateCard = (dt) => {
 }
 
 /**
- * 412号室に入る演出。ドアを開けて、中へ進む
+ * 2012号室に入る演出。ドアを開けて、中へ進む
  */
 const updateHome = (dt) => {
   S.cine += dt
@@ -1585,6 +1615,16 @@ const updateHum = (hum) => {
 }
 
 /**
+ * 階ごとの部品のうち、遠い階のものを隠して、描く数を減らす。外にいる間は、下の4階分だけ描く (上は霧でほぼ見えない)
+ */
+const updateLayers = () => {
+  const here = Math.floor((S.feet + 0.5) / FH) + 1
+  building.floorGroups.forEach((g, f) => {
+    if (g) g.visible = S.inside ? Math.abs(f - here) <= 2 : f <= 4
+  })
+}
+
+/**
  * カメラをプレイヤーの目の位置に置く。歩いている間は、少し頭が揺れる
  */
 const placeCamera = (dt) => {
@@ -1613,6 +1653,7 @@ const tick = (time) => {
   updateEntrance(dt)
   updateClock()
   placeCamera(dt)
+  updateLayers()
   updateHum(pool.update(eye, S.dark, dt))
   renderer.render(scene, camera)
 }
@@ -1694,6 +1735,9 @@ if (import.meta.env.DEV) {
     walker: (force) => spawnWalker(force),
     lamp: () => showLampFigure(),
     lift: (floor) => startLift(floor),
+    renderer,
+    scene,
+    camera,
     tp: (x, floor, z, yaw = S.yaw) => {
       S.pos.set(x, 0, z)
       S.feet = floorY(floor)
