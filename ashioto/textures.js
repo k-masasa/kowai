@@ -1540,7 +1540,7 @@ export const trainAdTexture = (kind) =>
   })
 
 /**
- * 電車の座席のモケット。細かい織りの模様。1枚で 0.5m 四方
+ * 電車の座席のモケット。細かい織りの模様。1枚で 0.5m 四方で、左の端が1人分の座面の継ぎ目
  */
 export const moquetteTexture = (base) =>
   canvasTexture(128, 128, (ctx, w, h) => {
@@ -1551,6 +1551,105 @@ export const moquetteTexture = (base) =>
       ctx.fillRect(0, y, w, 1)
     }
     speckle(ctx, w, h, 900, ['rgba(255, 255, 255, 0.08)', 'rgba(0, 0, 0, 0.15)'], 1.5)
+    const seam = ctx.createLinearGradient(0, 0, 10, 0)
+    seam.addColorStop(0, 'rgba(0, 0, 0, 0.42)')
+    seam.addColorStop(0.35, 'rgba(0, 0, 0, 0.1)')
+    seam.addColorStop(1, 'rgba(255, 255, 255, 0)')
+    ctx.fillStyle = seam
+    ctx.fillRect(0, 0, 10, h)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)'
+    ctx.fillRect(w - 3, 0, 3, h)
+  })
+
+/**
+ * 電車の中の壁の化粧板。白に近い地に、うすいむら。1枚で 1.2m 四方
+ */
+export const trainWallTexture = () =>
+  canvasTexture(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#e8e6df'
+    ctx.fillRect(0, 0, w, h)
+    stains(ctx, w, h, 4, '120, 115, 100', 0.08)
+    speckle(ctx, w, h, 4000, ['rgba(255, 255, 255, 0.12)', 'rgba(0, 0, 0, 0.035)'], 1.2)
+  })
+
+/**
+ * 電車の床。灰色の滑り止めの床材。通路は少し明るく、細かい点の模様がある。1枚で 0.6m 四方
+ * @param aisle - 通路の部分なら true
+ */
+export const trainFloorTexture = (aisle) =>
+  canvasTexture(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = aisle ? '#9c9d98' : '#7a7c78'
+    ctx.fillRect(0, 0, w, h)
+    speckle(ctx, w, h, 7000, ['rgba(255, 255, 255, 0.07)', 'rgba(0, 0, 0, 0.1)'], 1.6)
+    stains(ctx, w, h, 3, '40, 40, 35', 0.12)
+    if (!aisle) return
+    ctx.fillStyle = 'rgba(60, 60, 55, 0.35)'
+    for (let y = 8; y < h; y += 16) {
+      for (let x = 8; x < w; x += 16) {
+        ctx.beginPath()
+        ctx.arc(x, y, 2.2, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    }
+  })
+
+/**
+ * 電車の車体のステンレス。横に細かいヘアラインと、板の継ぎ目。1枚で 1.5m 四方で、左の端が継ぎ目
+ */
+export const stainlessTexture = () =>
+  canvasTexture(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#c3c6c9'
+    ctx.fillRect(0, 0, w, h)
+    for (let y = 0; y < h; y += 1) {
+      ctx.fillStyle = `rgba(${Math.random() < 0.5 ? '255, 255, 255' : '60, 65, 70'}, ${Math.random() * 0.08})`
+      ctx.fillRect(0, y, w, 1)
+    }
+    stains(ctx, w, h, 3, '80, 80, 75', 0.1)
+    ctx.fillStyle = 'rgba(40, 42, 45, 0.45)'
+    ctx.fillRect(0, 0, 2, h)
+  })
+
+/**
+ * 明かりのにじみ。真ん中が白く、外へ向かって消える丸
+ */
+export const glareTexture = () =>
+  canvasTexture(128, 128, (ctx, w, h) => {
+    const g = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2)
+    g.addColorStop(0, 'rgba(255, 255, 255, 1)')
+    g.addColorStop(0.15, 'rgba(255, 250, 235, 0.55)')
+    g.addColorStop(0.5, 'rgba(255, 245, 225, 0.12)')
+    g.addColorStop(1, 'rgba(255, 245, 225, 0)')
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, w, h)
+  })
+
+/**
+ * 電車の正面の行き先の表示。黒い地に、だいだい色の文字。text が空なら真っ黒
+ */
+export const frontSignTexture = (text) =>
+  canvasTexture(512, 128, (ctx, w, h) => {
+    ctx.fillStyle = '#060606'
+    ctx.fillRect(0, 0, w, h)
+    if (!text) return
+    centerText(ctx, text, w / 2, h / 2 + 2, `800 70px ${GOTHIC}`, '#ff9a1f')
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)'
+    for (let y = 0; y < h; y += 4) ctx.fillRect(0, y, w, 1)
+    for (let x = 0; x < w; x += 4) ctx.fillRect(x, 0, 1, h)
+  })
+
+/**
+ * 電車の天井の真ん中の、冷房の吹き出し口。うすい灰色に、細長い穴が並ぶ。1枚で 0.5m 四方
+ */
+export const ventTexture = () =>
+  canvasTexture(128, 128, (ctx, w, h) => {
+    ctx.fillStyle = '#d6d5cf'
+    ctx.fillRect(0, 0, w, h)
+    for (let y = 6; y < h; y += 10) {
+      ctx.fillStyle = '#3d3e40'
+      ctx.fillRect(10, y, w - 20, 4)
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.35)'
+      ctx.fillRect(10, y + 4, w - 20, 1)
+    }
   })
 
 /**

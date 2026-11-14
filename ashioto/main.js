@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import './style.css'
 import {
   FH,
@@ -276,6 +277,10 @@ const homeStation = buildStation(
 )
 // 家に帰る電車。走っている間は、ほかの物から遠い RIDE に置いて、窓の外の景色を流す
 const train = buildTrain(scene, building)
+// 電車の外側の映り込み。部屋の明かりを写した、ぼんやりした景色を使う
+const pmrem = new THREE.PMREMGenerator(renderer)
+train.lightOutside(pmrem.fromScene(new RoomEnvironment(), 0.04).texture)
+pmrem.dispose()
 const RIDE = new THREE.Vector3(800, 0, -300)
 const ride = buildRideScenery(scene, RIDE)
 train.place(RIDE)
@@ -682,6 +687,14 @@ const updateTrip = (dt) => {
     }
   } else if (T.phase === 'cruise') {
     ride.update(dt, T.speed)
+    // 走り出して、車内の明かりが光を受け持ってから、窓に映る車内を撮る。隣の車両の人は写さない
+    if (T.t > 0.4 && !T.shot) {
+      T.shot = true
+      const shown = figure.group.visible
+      figure.group.visible = false
+      train.capture(renderer)
+      figure.group.visible = shown
+    }
     if (T.t > 12 && !T.crossed) {
       T.crossed = true
       ride.cross(180)
