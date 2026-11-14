@@ -17,7 +17,7 @@ import { createPerson } from './people.js'
 import { createSound } from './sound.js'
 import { buildStation } from './station.js'
 import { buildTown } from './town.js'
-import { buildRideScenery, buildTrain } from './train.js'
+import { CAR, buildRideScenery, buildTrain } from './train.js'
 
 // あしおと
 // 夜、マンションの前の道から歩いて帰る。エレベーターは点検中なので、階段で20階まで上がり、
@@ -148,6 +148,7 @@ const dayState = () => ({
   peekWin: null,
   wrong: null,
   trip: null,
+  story: null,
   odd: null,
   hinted: {},
   lookBack: 0,
@@ -539,8 +540,10 @@ const placeStart = (from) => {
     S.tag = 'S'
     S.prevTag = 'S'
     S.trip = null
+    S.story = { stage: 'home' }
     return
   }
+  S.story = { stage: 'none', look: 0, carX: 8, unseen: 0 }
   S.pos.copy(town.start)
   S.yaw = Math.PI
   S.tag = '@OB'
@@ -1085,6 +1088,8 @@ const updateSlam = (dt) => {
  * 自分の足音と、少し遅れて鳴る、もう1人の足音の大きさ
  */
 const echoVolume = () => {
+  // 月見台から家までの道では、だれかがついてくる
+  if (S.tag === 'S' && S.checkpoint && !S.inside) return 0.12
   const L = level()
   if (L < 1 || S.final) return 0
   return Math.min(0.08 + 0.07 * (L - 1), 0.3)
@@ -1956,6 +1961,67 @@ const updateWalker = (dt) => {
   }
 }
 
+const storyHead = new THREE.Vector3()
+
+/**
+ * 話の流れ。中央町のホームの向かいに顔の無い人が立っていて、目が合う。電車では隣の車両にいて、
+ * 目を離すたびに近づく。月見台に着く前に消える
+ */
+const updateStory = (dt) => {
+  const st = S.story
+  if (!st) return
+  const T = S.trip
+  if (st.stage === 'none' && /^@C[EGTNP]/.test(S.tag)) {
+    st.stage = 'platform'
+    const p = workStation.far
+    figure.group.position.set(p.x + 3.5, 0, p.z)
+    figure.randomPose(0)
+    figure.group.visible = true
+  }
+  if (st.stage === 'platform') {
+    figure.face(S.pos)
+    storyHead.copy(figure.group.position)
+    storyHead.y += 1.6
+    if (S.tag === '@CP' && inView() && lookingAt(storyHead, 0.22)) st.look += dt
+    if (st.look > 1.0 && !st.met) {
+      st.met = true
+      figure.randomPose(0.25)
+      sound.whisper()
+      whisper('目が、合った。', 2600)
+      if (T) T.waited = Math.max(T.waited, 6.5)
+    }
+    if (T && T.phase === 'board') {
+      figure.group.visible = false
+      st.stage = 'ride'
+    }
+    return
+  }
+  if (st.stage === 'ride' && T && T.phase === 'cruise') {
+    st.stage = 'car'
+    figure.randomPose(0)
+    figure.group.visible = true
+  }
+  if (st.stage !== 'car') return
+  const base = train.root.position
+  figure.group.position.set(base.x + CAR + 0.6 + st.carX, 0, base.z)
+  figure.group.rotation.y = -Math.PI / 2
+  if (inView()) {
+    st.unseen = 0
+  } else {
+    st.unseen += dt
+    if (st.unseen > 2.2 && st.carX > -8) {
+      st.carX -= 4
+      st.unseen = 0
+      sound.step(0.12, { muffle: 0.5 })
+    }
+  }
+  if (T && T.phase === 'arrive' && T.t > 3) {
+    figure.group.visible = false
+    sound.flicker()
+    st.stage = 'home'
+  }
+}
+
 /**
  * 会社のロビーの自動ドアと、通りの信号。信号は青の間だけ、ピヨピヨ鳴る
  */
@@ -2010,6 +2076,7 @@ const updateRattle = (dt) => {
 const updatePlay = (dt) => {
   updateTrip(dt)
   updateTown(dt)
+  updateStory(dt)
   move(dt)
   if (S.mode !== 'play') return
   updateAhead(dt)
