@@ -1,0 +1,121 @@
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+}
+
+body {
+  font-family: 'Hiragino Mincho ProN', 'Yu Mincho', serif;
+  color: #cfc9bd;
+}
+
+canvas {
+  display: block;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  text-align: center;
+}
+
+.overlay h1 {
+  margin: 0 0 1.4em 0.5em;
+  font-size: 44px;
+  font-weight: normal;
+  letter-spacing: 0.5em;
+  color: #e0dbd0;
+}
+
+#back {
+  position: absolute;
+  top: 24px;
+  left: 28px;
+  font-size: 13px;
+  letter-spacing: 0.15em;
+  color: #55514a;
+  text-decoration: none;
+}
+
+#back:hover {
+  color: #a39d92;
+}
+
+#levels {
+  display: flex;
+  gap: 2.5em;
+}
+
+#levels button {
+  padding: 0.4em 0.2em;
+  border: none;
+  border-bottom: 1px solid transparent;
+  background: none;
+  font: inherit;
+  font-size: 15px;
+  letter-spacing: 0.2em;
+  color: #8d877c;
+  cursor: pointer;
+}
+
+#levels button:hover {
+  border-bottom-color: #8d877c;
+  color: #e0dbd0;
+}
+
+#pause {
+  background: rgba(0, 0, 0, 0.72);
+  cursor: pointer;
+}
+
+.start {
+  font-size: 15px;
+  letter-spacing: 0.2em;
+  color: #8d877c;
+  animation: breathe 3s ease-in-out infinite;
+}
+
+.note {
+  position: absolute;
+  bottom: 40px;
+  font-size: 12px;
+  line-height: 2;
+  color: #55514a;
+}
+
+#place {
+  position: fixed;
+  left: 28px;
+  bottom: 22px;
+  z-index: 1;
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 0.25em;
+  color: #f2ede2;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.7);
+  opacity: 0;
+  transition: opacity 0.8s;
+  pointer-events: none;
+}
+
+#place.shown {
+  opacity: 0.8;
+}
+
+.hidden {
+  display: none;
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
