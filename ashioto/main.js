@@ -1022,7 +1022,8 @@ const walkSounds = (dist) => {
  * 場所に応じた出来事。建物に入る、階段、20階、追いかけ、2012号室
  */
 const onPlace = () => {
-  if (!S.inside && S.tag === 'H1' && S.pos.z < -0.8) {
+  // 道とエントランスの前のほかの区画に入ったら、建物の中。壁ぞいに入っても、ここで必ず中になる
+  if (!S.inside && S.tag !== 'S' && S.tag !== 'E') {
     S.inside = true
     building.zones.find((z) => z.tag === 'E').on = false
     sound.slam(0.25)
