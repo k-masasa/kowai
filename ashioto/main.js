@@ -149,6 +149,8 @@ const dayState = () => ({
   lookBack: 0,
   stillFor: 0,
   crouchShown: false,
+  vendTrap: false,
+  vendFor: 0,
   walker: null,
   walkerIn: 0,
   lampFig: null,
@@ -437,6 +439,7 @@ const resetWorld = () => {
   if (S.level.events) {
     S.odd = planOddities()
     applyOddities()
+    S.vendTrap = S.day >= 2 && Math.random() < 0.4
   }
 }
 
@@ -846,10 +849,18 @@ const goHome = () => {
   sound.setDrone(0)
   const lines = [...stamp(), '部屋に、帰ってきました。']
   if (S.day < S.level.days) {
+    // たまに、部屋の電気が消えている
+    const unlit = Math.random() < 0.35
+    if (unlit) {
+      building.homeLamps.forEach((lamp) => {
+        lamp.on = false
+      })
+    }
+    const note = unlit ? ['', '廊下の電気を、消した覚えはありません。'] : []
     S.timeline = [
       [1.3, () => fadeOut(0.8)],
       [2.2, () => sound.slam(0.8)],
-      [3.6, () => showEnding(lines)],
+      [3.6, () => showEnding([...lines, ...note])],
       [6.8, () => $('ending').classList.add('hidden')],
       [7.8, () => dayCard(S.day + 1)],
     ]
@@ -1294,6 +1305,20 @@ const updateLift = (dt) => {
 const updateOddities = (dt) => {
   if (!S.level.events) return
   const vend = building.fixtures.find((f) => f.vending)
+  // 2日目から、たまに。明るい自販機の前で立ち止まっていると、明かりがちらついてから襲われる
+  if (S.vendTrap) {
+    const front = Math.abs(S.pos.x - vend.pos.x) < 0.9 && S.pos.z > 1.2 && S.pos.z < 2.3
+    S.vendFor = front && !S.walking ? S.vendFor + dt : 0
+    if (S.vendFor > 2 && !S.hinted.vend) {
+      S.hinted.vend = true
+      vend.stutter = 0.8
+      whisper('見られてる。')
+    }
+    if (S.vendFor > 3.6) {
+      oddDeath('明るいところは、よく見えます。')
+      return
+    }
+  }
   if (!S.dropped && Math.hypot(S.pos.x - vend.pos.x, S.pos.z - 1.5) < 2.4) {
     S.dropped = true
     if (Math.random() < 0.5) {
@@ -1472,6 +1497,8 @@ const spawnWalker = (force = {}) => {
   const up = pf >= 3 && (force.up ?? Math.random() < 0.35)
   const chance = Math.min(0.7, 0.25 + 0.12 * (S.day - 1) + 0.08 * S.loops)
   const strange = !up && (force.strange ?? Math.random() < chance)
+  // 2日目からは、おかしな人の半分が、顔があってあいさつもする。足音だけがしない
+  const mimic = strange && (force.mimic ?? (S.day >= 2 && Math.random() < 0.5))
   const unit = Math.floor(Math.random() * UNITS)
   const path = up ? homePath(pf - 2, pf - 1, unit) : exitPath(Math.min(FLOORS, pf + 2))
   S.walker = {
@@ -1488,8 +1515,9 @@ const spawnWalker = (force = {}) => {
     stare: 0,
     look: 0,
     greeted: false,
+    mimic,
   }
-  person.dress(Math.floor(Math.random() * 6), strange)
+  person.dress(Math.floor(Math.random() * 6), strange && !mimic)
   person.group.position.copy(path[0])
   person.group.visible = true
 }
@@ -1638,7 +1666,7 @@ const updateWalker = (dt) => {
     const vol = THREE.MathUtils.clamp(1.4 / (1 + d), 0.03, 0.45)
     sound.step(vol, { muffle: THREE.MathUtils.clamp((dy - 1) * 0.3, 0, 0.7) })
   }
-  if (!w.strange && !w.greeted && d < 2.4 && dy < 1.2 && lookingAt(headPoint, 0.6)) {
+  if ((!w.strange || w.mimic) && !w.greeted && d < 2.4 && dy < 1.2 && lookingAt(headPoint, 0.6)) {
     w.greeted = true
     whisper('こんばんは。')
   }
