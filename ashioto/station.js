@@ -7,11 +7,14 @@ import {
   concreteTexture,
   departureBoardTexture,
   fareChartTexture,
+  gateLampTexture,
   gateTopTexture,
   meshTexture,
+  shopSignTexture,
   signTexture,
   stationBoardTexture,
   stationNameTexture,
+  stationPanelTexture,
   stationPosterTexture,
   stoneTileTexture,
   tactileTexture,
@@ -41,6 +44,8 @@ export const buildStation = (scene, o, shared) => {
   const mat = {
     floor: tiled(stoneTileTexture(), 1.2, { roughness: 0.35 }),
     wall: tiled(wallTexture(), 2.0),
+    inner: tiled(stationPanelTexture(), 1.8, { roughness: 0.5 }),
+    baseboard: new THREE.MeshStandardMaterial({ color: 0x3a3c3f, roughness: 0.6 }),
     ceiling: tiled(ceilingTexture(), 2.0, { roughness: 1 }),
     concrete: tiled(concreteTexture(), 1.5),
     tactile: tiled(tactileTexture(), 0.3, { roughness: 0.7 }),
@@ -51,7 +56,25 @@ export const buildStation = (scene, o, shared) => {
     white: new THREE.MeshStandardMaterial({ color: 0xe6e5e0, roughness: 0.6 }),
     edge: new THREE.MeshStandardMaterial({ color: 0xd7d4cc, roughness: 0.7 }),
     gate: new THREE.MeshStandardMaterial({ color: 0xc9ccd0, roughness: 0.35, metalness: 0.3 }),
-    gateTop: new THREE.MeshStandardMaterial({ map: gateTopTexture(), roughness: 0.4 }),
+    // 改札機の上の面。IC の読み取り部とランプが光る
+    gateTop: (() => {
+      const map = gateTopTexture()
+      return new THREE.MeshStandardMaterial({
+        map,
+        emissiveMap: map,
+        emissive: 0xffffff,
+        emissiveIntensity: 0.35,
+        roughness: 0.4,
+      })
+    })(),
+    gateGo: new THREE.MeshBasicMaterial({ map: gateLampTexture(true) }),
+    gateStop: new THREE.MeshBasicMaterial({ map: gateLampTexture(false) }),
+    exitSign: new THREE.MeshBasicMaterial({
+      map: shopSignTexture('出口', '#f2c400', '#111111', 'Exit'),
+    }),
+    platformSign: new THREE.MeshBasicMaterial({
+      map: shopSignTexture('のりば', '#1d1f22', '#ffffff', 'Platform'),
+    }),
     machine: new THREE.MeshStandardMaterial({ color: 0x3f6f8f, roughness: 0.4, metalness: 0.3 }),
     screen: new THREE.MeshBasicMaterial({ color: 0x9fd0ff }),
     glass: new THREE.MeshStandardMaterial({
@@ -128,32 +151,60 @@ export const buildStation = (scene, o, shared) => {
     [2.5, 7],
   ].forEach(([a, c]) => {
     wallZ(b, mat.wall, Z(0.01), X(a), X(c), 0, H, 1)
-    wallZ(b, mat.wall, Z(-0.01), X(a), X(c), 0, H, -1)
+    wallZ(b, mat.inner, Z(-0.01), X(a), X(c), 0, H, -1)
   })
   wallZ(b, mat.wall, Z(0.01), X(-2.5), X(2.5), 2.6, H, 1)
-  wallZ(b, mat.wall, Z(-0.01), X(-2.5), X(2.5), 2.6, 3.0, -1)
+  wallZ(b, mat.inner, Z(-0.01), X(-2.5), X(2.5), 2.6, 3.0, -1)
   b.add(new THREE.PlaneGeometry(5.2, 0.6), mat.nameSign, at(X(0), 3.05, Z(0.03)))
   fixture(X(0), 2.4, Z(1.2), 0xe8eeff, 3, 6, null).outdoor = true
   // 東西の壁と、北のホームへの口
-  wallX(b, mat.wall, X(-7), Z(-10), Z(0), 0, H, 1)
-  wallX(b, mat.wall, X(7), Z(-10), Z(0), 0, H, -1)
+  wallX(b, mat.inner, X(-7), Z(-10), Z(0), 0, H, 1)
+  wallX(b, mat.inner, X(7), Z(-10), Z(0), 0, H, -1)
   wallX(b, mat.wall, X(-7.01), Z(-10), Z(0), 0, H, -1)
   wallX(b, mat.wall, X(7.01), Z(-10), Z(0), 0, H, 1)
   ;[
     [-7, -2.5],
     [2.5, 7],
   ].forEach(([a, c]) => {
-    wallZ(b, mat.wall, Z(-10), X(a), X(c), 0, 3.0, 1)
+    wallZ(b, mat.inner, Z(-10), X(a), X(c), 0, 3.0, 1)
     wallZ(b, mat.wall, Z(-10.01), X(a), X(c), 0, H, -1)
   })
-  wallZ(b, mat.wall, Z(-10), X(-2.5), X(2.5), 2.6, 3.0, 1)
+  wallZ(b, mat.inner, Z(-10), X(-2.5), X(2.5), 2.6, 3.0, 1)
   wallZ(b, mat.wall, Z(-10.01), X(-2.5), X(2.5), 2.6, H, -1)
   // 天井と屋根
   flat(b, mat.ceiling, 3.0, X(-7), X(7), Z(-10), Z(0), -1)
   box(b, mat.concrete, X(-7.3), X(7.3), H, H + 0.22, Z(-10.3), Z(0.7))
-  tube(X(-3), 2.98, Z(-2.5), 1.6)
-  tube(X(1.5), 2.98, Z(-2.5), 1.6)
-  tube(X(0), 2.98, Z(-8.2), 1.6)
+  // 天井の蛍光灯。夜でも、駅の中は明るい
+  ;[-4.5, 0, 4.5].forEach((x) => {
+    ;[-1.8, -4.4, -8.2].forEach((z) => {
+      if (x > 3 && z > -6) return
+      tube(X(x), 2.98, Z(z), 1.6, 3.5, 7)
+    })
+  })
+  // 壁の下の幅木
+  ;[
+    [-7, -2.5],
+    [2.5, 4],
+  ].forEach(([a, c]) => box(b, mat.baseboard, X(a), X(c), 0, 0.09, Z(-0.03), Z(-0.01)))
+  ;[
+    [-7, -2.5],
+    [2.5, 7],
+  ].forEach(([a, c]) => box(b, mat.baseboard, X(a), X(c), 0, 0.09, Z(-9.99), Z(-9.97)))
+  ;[-1, 1].forEach((e) => {
+    const x = X(e * 6.985)
+    box(b, mat.baseboard, x - 0.012, x + 0.012, 0, 0.09, Z(-10), Z(0))
+  })
+  // 天井から下がる案内。入口の側に「出口」、改札の手前に「のりば」
+  ;[
+    [mat.exitSign, X(-1.6), Z(-1.0), Math.PI],
+    [mat.platformSign, X(-4.2), Z(-4.9), 0],
+  ].forEach(([m, x, z, ry]) => {
+    box(b, mat.dark, x - 0.62, x + 0.62, 2.38, 2.76, z - 0.06, z + 0.06)
+    b.add(new THREE.PlaneGeometry(1.16, 0.32), m, at(x, 2.57, z + (ry ? -0.065 : 0.065), 0, ry))
+    ;[-0.45, 0.45].forEach((d) =>
+      box(b, mat.steel, x + d - 0.01, x + d + 0.01, 2.76, 3.0, z - 0.01, z + 0.01),
+    )
+  })
 
   // 券売機と運賃表 (西の壁)
   ;[-3.3, -2.3].forEach((z) => {
@@ -164,8 +215,8 @@ export const buildStation = (scene, o, shared) => {
   b.add(new THREE.PlaneGeometry(3.4, 1.05), mat.fare, at(X(-6.99), 2.25, Z(-2.8), 0, Math.PI / 2))
 
   // 駅員室 (東)。窓口は閉まっている
-  box(b, mat.wall, X(4), X(4.1), 0, 3.0, Z(-6), Z(-1))
-  box(b, mat.wall, X(4), X(7), 0, 3.0, Z(-6.1), Z(-6))
+  box(b, mat.inner, X(4), X(4.1), 0, 3.0, Z(-6), Z(-1))
+  box(b, mat.inner, X(4), X(7), 0, 3.0, Z(-6.1), Z(-6))
   b.add(new THREE.PlaneGeometry(1.4, 0.8), mat.glass, at(X(3.995), 1.4, Z(-3.5), 0, -Math.PI / 2))
   box(b, mat.white, X(3.75), X(4.0), 0.95, 1.0, Z(-4.3), Z(-2.7))
   const closed = new THREE.Mesh(
@@ -181,9 +232,13 @@ export const buildStation = (scene, o, shared) => {
 
   // 改札。4つの通路と、その両わきの仕切り
   const gateX = [-2.4, -1.2, 0, 1.2, 2.4]
-  gateX.forEach((x) => {
+  gateX.forEach((x, k) => {
     box(b, mat.gate, X(x - 0.13), X(x + 0.13), 0, 0.98, Z(-6.7), Z(-5.3))
     b.add(new THREE.PlaneGeometry(0.26, 1.4), mat.gateTop, at(X(x), 0.985, Z(-6), -Math.PI / 2))
+    // 両はしの、通れるかどうかのランプ。入る側は緑の矢印、端の1台は赤の ×
+    const lamp = k === gateX.length - 1 ? mat.gateStop : mat.gateGo
+    b.add(new THREE.PlaneGeometry(0.16, 0.12), lamp, at(X(x), 0.8, Z(-5.295)))
+    b.add(new THREE.PlaneGeometry(0.16, 0.12), lamp, at(X(x), 0.8, Z(-6.705), 0, Math.PI))
   })
   box(b, mat.gate, X(-7), X(-2.53), 0, 1.0, Z(-6.05), Z(-5.95))
   box(b, mat.gate, X(2.53), X(4), 0, 1.0, Z(-6.05), Z(-5.95))
