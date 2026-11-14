@@ -7,6 +7,7 @@ import {
   moquetteTexture,
   stainlessTexture,
   stationBoardTexture,
+  horrorAdTexture,
   trainAdTexture,
   trainDisplay,
   trainFloorTexture,
@@ -155,9 +156,11 @@ export const buildTrain = (scene, shared) => {
   }
   const display = trainDisplay()
   const displayMat = new THREE.MeshBasicMaterial({ map: display.tex })
-  const ads = [0, 1, 2, 3].map(
-    (k) => new THREE.MeshStandardMaterial({ map: trainAdTexture(k), roughness: 0.7 }),
+  // 広告。よくある4つと、5つ目に、いま話題のホラー映画 (道に落ちている鈴を拾ってはいけない、という話)
+  const ads = [...[0, 1, 2, 3].map(trainAdTexture), horrorAdTexture()].map(
+    (map) => new THREE.MeshStandardMaterial({ map, roughness: 0.7 }),
   )
+  const HORROR = 4
 
   // 照明。動かす時に、場所を一緒に動かすので、車の中の座標も覚えておく
   const lights = []
@@ -423,9 +426,9 @@ export const buildTrain = (scene, shared) => {
         )
       }
     })
-    // 中づり広告。天井から細い針金で下げる
-    for (let x = x0 + 1.6; x < x1 - 1; x += 3.1) {
-      const k = Math.floor(Math.abs(x * 7)) % ads.length
+    // 中づり広告。天井から細い針金で下げる。3枚に1枚は、ホラー映画の広告
+    for (let n = 0, x = x0 + 1.6; x < x1 - 1; n += 1, x += 3.1) {
+      const k = n % 3 === 1 ? HORROR : Math.floor(Math.abs(x * 7)) % HORROR
       ;[0, Math.PI].forEach((ry) => {
         b.add(
           new THREE.PlaneGeometry(0.52, 0.34),

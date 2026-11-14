@@ -828,44 +828,6 @@ export const fraudPosterTexture = () =>
   })
 
 /**
- * 祠の由来の立て札。古い板に、墨で縦に書いてある。右の列から読む
- */
-export const shrineSignTexture = () =>
-  canvasTexture(512, 800, (ctx, w, h) => {
-    ctx.fillStyle = '#7d6649'
-    ctx.fillRect(0, 0, w, h)
-    for (let i = 0; i < 70; i++) {
-      const x = Math.random() * w
-      const bend = () => (Math.random() - 0.5) * 30
-      ctx.strokeStyle = `rgba(50, 32, 18, ${0.05 + Math.random() * 0.14})`
-      ctx.lineWidth = 1 + Math.random() * 2.5
-      ctx.beginPath()
-      ctx.moveTo(x, 0)
-      ctx.bezierCurveTo(x + bend(), h * 0.3, x + bend(), h * 0.7, x + bend(), h)
-      ctx.stroke()
-    }
-    ctx.fillStyle = 'rgba(232, 220, 196, 0.62)'
-    ctx.fillRect(22, 22, w - 44, h - 44)
-    stains(ctx, w, h, 9, '40, 28, 14', 0.4)
-    speckle(ctx, w, h, 2500, ['rgba(40, 25, 10, 0.25)', 'rgba(255, 245, 220, 0.12)'], 2)
-    const columns = [
-      ['面無し様 由来', 52],
-      ['むかし この辺りで', 36],
-      ['顔をなくした人を まつる', 36],
-      ['鈴の音を たどって', 36],
-      ['なくした顔を 探しに来るという', 36],
-      ['夜は 鈴を鳴らさぬこと', 36],
-    ]
-    let x = w - 74
-    columns.forEach(([text, size], k) => {
-      ;[...text].forEach((ch, i) => {
-        centerText(ctx, ch, x, 74 + i * size * 1.06, `600 ${size}px ${MINCHO}`, '#1d150d')
-      })
-      x -= k === 0 ? 80 : 66
-    })
-  })
-
-/**
  * 町内会の掲示板の板。緑のフェルトに、お知らせの紙が何枚か。右側はお願いの紙を重ねて貼る場所
  */
 export const communityBoardTexture = () =>
@@ -1620,6 +1582,88 @@ export const trainAdTexture = (kind) =>
     centerText(ctx, bb, w / 2, 136, `700 30px ${GOTHIC}`, fg)
     centerText(ctx, c, w / 2, 196, `600 24px ${GOTHIC}`, fg)
     stains(ctx, w, h, 2, '60, 50, 40', 0.1)
+  })
+
+/**
+ * 電車の広告のうち、いま話題のホラー映画の広告。道に落ちている鈴を拾うと、鳴らすたびに持ち主が音をたどって
+ * 取りに来る、という話。写真の鈴は、通りで拾う鈴と同じ (金色で、赤い紐が付いている)
+ */
+export const horrorAdTexture = () =>
+  canvasTexture(768, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#09090b'
+    ctx.fillRect(0, 0, w, h)
+    // 左は、夜の道に落ちている鈴の写真。上から少しだけ光が当たっている
+    const pw = 340
+    ctx.fillStyle = '#19191b'
+    ctx.fillRect(0, 0, pw, h)
+    speckle(ctx, pw, h, 3200, ['rgba(255, 255, 255, 0.05)', 'rgba(0, 0, 0, 0.4)'], 2)
+    const bx = 165
+    const by = 300
+    const spot = ctx.createRadialGradient(bx, by, 10, bx, by, 240)
+    spot.addColorStop(0, 'rgba(215, 208, 190, 0.3)')
+    spot.addColorStop(1, 'rgba(0, 0, 0, 0)')
+    ctx.fillStyle = spot
+    ctx.fillRect(0, 0, pw, h)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'
+    ctx.beginPath()
+    ctx.ellipse(bx + 14, by + 52, 62, 14, 0, 0, Math.PI * 2)
+    ctx.fill()
+    // 赤い紐
+    ctx.strokeStyle = '#8e2a22'
+    ctx.lineWidth = 7
+    ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.moveTo(bx + 4, by - 66)
+    ctx.bezierCurveTo(bx + 70, by - 110, bx + 110, by - 10, bx + 150, by + 60)
+    ctx.stroke()
+    // 鈴。上の輪と、金色の玉と、下の口
+    ctx.strokeStyle = '#a07c32'
+    ctx.lineWidth = 6
+    ctx.beginPath()
+    ctx.ellipse(bx, by - 64, 10, 12, 0, 0, Math.PI * 2)
+    ctx.stroke()
+    const r = 58
+    const gold = ctx.createRadialGradient(bx - 22, by - 24, 6, bx, by, r)
+    gold.addColorStop(0, '#fff4c8')
+    gold.addColorStop(0.35, '#d8b058')
+    gold.addColorStop(1, '#4f3c14')
+    ctx.fillStyle = gold
+    ctx.beginPath()
+    ctx.arc(bx, by, r, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.strokeStyle = '#1c1408'
+    ctx.lineWidth = 7
+    ctx.beginPath()
+    ctx.moveTo(bx - 34, by + 18)
+    ctx.lineTo(bx + 34, by + 18)
+    ctx.moveTo(bx, by + 18)
+    ctx.lineTo(bx, by + r - 2)
+    ctx.stroke()
+    ;[-1, 1].forEach((e) => {
+      ctx.fillStyle = '#1c1408'
+      ctx.beginPath()
+      ctx.arc(bx + e * 36, by + 18, 7, 0, Math.PI * 2)
+      ctx.fill()
+    })
+    // 写真の右の端は、黒い地に溶かす
+    const fade = ctx.createLinearGradient(pw - 90, 0, pw, 0)
+    fade.addColorStop(0, 'rgba(9, 9, 11, 0)')
+    fade.addColorStop(1, 'rgba(9, 9, 11, 1)')
+    ctx.fillStyle = fade
+    ctx.fillRect(pw - 90, 0, 90, h)
+    // 右は、題と文
+    const cx = 556
+    centerText(ctx, '話題の実話怪談、ついに映画化', cx, 62, `600 24px ${GOTHIC}`, '#b9b4aa')
+    ctx.shadowColor = 'rgba(200, 30, 20, 0.7)'
+    ctx.shadowBlur = 18
+    centerText(ctx, 'すずひろい', cx, 164, `800 74px ${MINCHO}`, '#f2eee6')
+    ctx.shadowBlur = 0
+    centerText(ctx, '道に落ちている鈴を、', cx, 262, `700 30px ${GOTHIC}`, '#e04a3a')
+    centerText(ctx, '拾ってはいけない。', cx, 304, `700 30px ${GOTHIC}`, '#e04a3a')
+    centerText(ctx, '鳴らすと、持ち主が', cx, 366, `600 24px ${GOTHIC}`, '#a9a49a')
+    centerText(ctx, '音をたどって取りに来る。', cx, 400, `600 24px ${GOTHIC}`, '#a9a49a')
+    centerText(ctx, '近日公開', cx, 466, `700 24px ${GOTHIC}`, '#cfc9be')
+    speckle(ctx, w, h, 2500, ['rgba(255, 255, 255, 0.04)', 'rgba(0, 0, 0, 0.3)'], 2)
   })
 
 /**

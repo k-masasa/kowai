@@ -159,7 +159,7 @@ const dayState = () => ({
   hinted: {},
   lookBack: 0,
   stillFor: 0,
-  // 祠の前で拾った鈴を持っているか。落ちている鈴が、近くでひとりでに鳴ったか
+  // 通りで拾った鈴を持っているか。落ちている鈴が、近くでひとりでに鳴ったか
   bell: false,
   bellCalled: false,
   // 上の踊り場で探している人。出したか、首を振る時間、鈴を聞きつけて振り向いている残りの秒数、消えるまでの秒数
@@ -593,7 +593,7 @@ const placeStart = (from) => {
     f.on = false
   })
   // マンションの前や中央町のホームからやり直す時は、鈴はもう持っている
-  town.shrine.bell.visible = from === 'office'
+  town.bell.mesh.visible = from === 'office'
   if (from === 'train') {
     const w = workStation.stop
     S.bell = true
@@ -1647,12 +1647,12 @@ const updateNoise = (dt) => {
 }
 
 /**
- * 祠の前に落ちている鈴。近づくと、ひとりでに小さく鳴る。足もとまで来たら拾う。
- * 拾わずに通り過ぎても、いつの間にかポケットに入っている
+ * 通りの歩道に落ちている鈴。近づくと、ひとりでに小さく鳴る。足もとまで来たら拾う。
+ * 拾わずに通り過ぎても、いつの間にかポケットに入っている。いわれは、電車の広告 (ホラー映画) で知る
  */
-const updateShrine = () => {
+const updateBell = () => {
   if (S.bell || !S.tag.startsWith('@C')) return
-  const at = town.shrine.at
+  const at = town.bell.at
   const d = flat(S.pos, at)
   if (!S.bellCalled && d < 4.5) {
     S.bellCalled = true
@@ -1670,7 +1670,7 @@ const updateShrine = () => {
  */
 const pickBell = (line) => {
   S.bell = true
-  town.shrine.bell.visible = false
+  town.bell.mesh.visible = false
   sound.suzu(0.3)
   whisper(line, 2800)
 }
@@ -2771,7 +2771,7 @@ const updatePlay = (dt) => {
   crowd.update(dt)
   updateTown(dt)
   updateStreetPeople(dt)
-  updateShrine()
+  updateBell()
   updateLastPassenger()
   updateStory(dt)
   move(dt)
