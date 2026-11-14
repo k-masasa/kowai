@@ -18,7 +18,9 @@ const gameInputs = () =>
 
 export default defineConfig({
   base: './',
-  server: { port: 5180, strictPort: true },
+  // この Mac では、ファイルの変更の知らせ (fsevents) が届かず、古い中身を返し続けることがある。
+  // 一定の間隔で見に行く形にする
+  server: { port: 5180, strictPort: true, watch: { usePolling: true, interval: 300 } },
   build: {
     rolldownOptions: {
       input: { main: `${root}index.html`, ...gameInputs() },

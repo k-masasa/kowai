@@ -77,6 +77,6 @@ __ashioto.walker({ strange: true })
 - 20階建てなので、扉・窓・照明の光る部分などは階ごとの入れ物 (`floorGroups`) に入れ、中にいる間は上下2階分、外にいる間は下の4階分だけ描く。
 - 建物の奥は中の詰まった箱で、2012号室の玄関と廊下、エレベーターの昇降路だけをくり抜いてある (`boxWithout`)。奥に何かを作る時は、くり抜いてから、内向きの壁を置く。
 - 雨だれなどの汚れは、透ける板を面の数 mm 手前に貼っている (`depthWrite: false`)。
-- 手元の dev サーバーが、ファイルの変更を拾わないことがある (古い中身を返し続ける)。その時は起動し直す。
-  - ほかのセッションが起動したサーバーで止められない時は、`main.js?v=1` のようにクエリを付けると新しい中身が返る。Chrome で `/ashioto/style.css` を開き、`index.html` の script の src を `/ashioto/main.js?v=1` に書き換えて `document.write` すると、そのまま遊べる。
+- この Mac では、dev サーバーにファイルの変更の知らせ (fsevents) が届かず、古い中身を返し続けていた。`vite.config.js` で、0.3秒ごとに見に行く形 (`usePolling`) にしてある。
+  - それでも古い中身が返る時は、`main.js?v=1` のようにクエリを付けると新しい中身が返る。Chrome で `/ashioto/style.css` を開き、`index.html` の script の src を `/ashioto/main.js?v=1` に書き換えて `document.write` すると、そのまま遊べる。
 - Claude in Chrome から開いたタブでは、マウスのロックが取れない (`WrongDocumentError`)。ロックが効いた時の動きは、`HTMLCanvasElement.prototype.requestPointerLock` と `document.pointerLockElement` を差し替え、`pointerlockchange` を自分で投げて確かめる。
