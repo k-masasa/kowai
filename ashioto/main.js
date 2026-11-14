@@ -15,6 +15,7 @@ import {
 } from './building.js'
 import { createLightPool } from './lights.js'
 import { createFigure } from './figure.js'
+import { createCrowd, v3 } from './crowd.js'
 import { createPerson } from './people.js'
 import { createSound } from './sound.js'
 import { buildStation } from './station.js'
@@ -192,7 +193,8 @@ const S = {
   // 何日目か。firstNight は1日目の夜
   day: 1,
   firstNight: new Date(),
-  // 月見台で電車を降りたら true。マンションで死んだら、マンションの前からやり直せる
+  // 死んだ時に、やり直せる場所。電車に乗ったら 'train' (中央町のホームから)、
+  // 月見台で電車を降りたら 'home' (マンションの前から)。まだどちらでもなければ false
   checkpoint: false,
   from: 'office',
   locked: false,
@@ -278,7 +280,7 @@ const homeStation = buildStation(
 // 家に帰る電車。走っている間は、ほかの物から遠い RIDE に置いて、窓の外の景色を流す
 const train = buildTrain(scene, building)
 const RIDE = new THREE.Vector3(800, 0, -300)
-const ride = buildRideScenery(scene, RIDE)
+const ride = buildRideScenery(scene, RIDE, building)
 train.place(RIDE)
 // 会社のある町と、乗る駅 (中央町)。ほかの場所から遠く離して置く
 const town = buildTown(scene, [-1000, 0], building)
@@ -324,6 +326,27 @@ scene.traverse((o) => {
 // 走っている時の速さ (m/秒) と、ブレーキをかけてから止まるまでの長さ (m)
 const CRUISE = 22
 const BRAKE = 90
+// 中央町から月見台までの駅。run は、前の駅を出てから止まり始めるまでの秒数。
+// 最後の月見台は終点で、本物の駅に着く。それ以外は、走る景色の中のホームに止まる
+const LEGS = [
+  {
+    name: '港北',
+    kana: 'こうほく',
+    roman: 'Kohoku',
+    prev: ['ちゅうおうちょう', '中央町'],
+    next: ['にしはら', '西原'],
+    run: 8,
+  },
+  {
+    name: '西原',
+    kana: 'にしはら',
+    roman: 'Nishihara',
+    prev: ['こうほく', '港北'],
+    next: ['つきみだい', '月見台'],
+    run: 8,
+  },
+  { name: '月見台', roman: 'Tsukimidai', run: 11, last: true },
+]
 // 照明の、始めの点き方。日が変わったら、これに戻す
 const lightsAtStart = building.fixtures.map((f) => ({ on: f.on, faulty: f.faulty }))
 const pool = createLightPool(scene, building.fixtures, 10)
@@ -333,6 +356,8 @@ scene.add(figure.group)
 const person = createPerson()
 person.group.visible = false
 scene.add(person.group)
+// 町と電車にいる人たち。乗客、ホームで待つ人、コンビニの店員
+const crowd = createCrowd(20)
 // 上の踊り場で、鈴の音を探している人。電車やホームに出てくるのと同じ、顔の無い黒いコートの人
 const seeker = createFigure()
 seeker.group.visible = false
@@ -461,9 +486,8 @@ const showEnding = (lines) => {
 const showNext = () => {
   document.exitPointerLock?.()
   const retry = S.mode === 'caught' && S.checkpoint
-  $('ending-next').textContent = retry
-    ? 'Enter キーで、マンションの前からやり直す'
-    : 'Enter キーでタイトルへ'
+  const where = S.checkpoint === 'train' ? '中央町のホームから' : 'マンションの前から'
+  $('ending-next').textContent = retry ? `Enter キーで、${where}やり直す` : 'Enter キーでタイトルへ'
   $('ending-next').classList.remove('hidden')
 }
 
@@ -474,7 +498,7 @@ const backToTitle = () => {
   if ($('ending-next').classList.contains('hidden')) return
   if (S.mode === 'caught' && S.checkpoint) {
     $('ending-next').classList.add('hidden')
-    startDay(S.day, 'home')
+    startDay(S.day, S.checkpoint)
     return
   }
   location.reload()
@@ -541,6 +565,8 @@ const resetWorld = () => {
   person.group.visible = false
   S.walkerIn = 8 + Math.random() * 8
   building.homeGlass.mesh.material = building.homeGlass.normal
+  crowd.releaseAll()
+  scene.add(figure.group)
   placeStart(S.from)
   closeLift()
   seeker.group.visible = false
@@ -556,6 +582,7 @@ const resetWorld = () => {
  * そうでなければ、会社のロビーのエレベーターの前から
  */
 const placeStart = (from) => {
+  train.setLit(true)
   train.setOpen(0)
   train.place(RIDE)
   train.root.visible = false
@@ -563,8 +590,30 @@ const placeStart = (from) => {
   train.fixtures.forEach((f) => {
     f.on = false
   })
-  // マンションの前からやり直す時は、鈴はもう持っている
-  town.shrine.bell.visible = from !== 'home'
+  // マンションの前や中央町のホームからやり直す時は、鈴はもう持っている
+  town.shrine.bell.visible = from === 'office'
+  if (from === 'train') {
+    const w = workStation.stop
+    S.bell = true
+    S.pos.set(w.x + 1.0, 0, w.z + 3.4)
+    S.yaw = Math.PI / 2
+    S.tag = '@CP'
+    S.prevTag = '@CP'
+    S.story = { stage: 'none', look: 0, carX: 22, unseen: 0 }
+    S.trip = {
+      phase: 'wait',
+      t: 0,
+      speed: 0,
+      joint: 0,
+      bell: 0,
+      left: 0,
+      sway: 0,
+      waited: 4,
+      leg: 0,
+    }
+    placeTownPeople()
+    return
+  }
   if (from === 'home') {
     S.bell = true
     S.pos.set(-8, 0, 2.0)
@@ -575,12 +624,14 @@ const placeStart = (from) => {
     S.story = { stage: 'home' }
     return
   }
-  S.story = { stage: 'none', look: 0, carX: 8, unseen: 0 }
+  S.checkpoint = false
+  S.story = { stage: 'none', look: 0, carX: 22, unseen: 0 }
   S.pos.copy(town.start)
   S.yaw = Math.PI
   S.tag = '@OB'
   S.prevTag = '@OB'
-  S.trip = { phase: 'wait', t: 0, speed: 0, joint: 0, bell: 0, left: 0, sway: 0, waited: 0 }
+  S.trip = { phase: 'wait', t: 0, speed: 0, joint: 0, bell: 0, left: 0, sway: 0, waited: 0, leg: 0 }
+  placeTownPeople()
   setTimeout(() => sound.ding(), 600)
 }
 
@@ -621,9 +672,229 @@ const trainExitPath = (stop) => {
   return [...toDoor, ...out, { x: door, z: stop.z + 2.9 }]
 }
 
+// 中央町から乗っている乗客。[両 (0 か 1), 両の真ん中からの x, 側, 降りる駅 (LEGS の番号)]。
+// 降りる駅が null の1人は、終点でも降りずに寝ている
+const SEATED = [
+  [0, -5.9, 1, 0],
+  [0, -4.2, -1, 0],
+  [0, -0.3, -1, 0],
+  [0, 4.0, 1, 0],
+  [0, 5.6, -1, 0],
+  [0, -8.9, -1, 1],
+  [0, -3.6, 1, 1],
+  [0, 1.0, 1, 1],
+  [0, 4.6, -1, 1],
+  [0, 6.3, 1, null],
+  [1, -4.8, 1, 0],
+  [1, 2.2, -1, 0],
+  [1, -1.3, 1, 1],
+  [1, 5.1, -1, 1],
+]
+
+/**
+ * 中央町のホームで、電車を待っている人と、コンビニの店員を置く
+ */
+const placeTownPeople = () => {
+  const w = workStation.stop
+  ;[
+    [-7.4, 0],
+    [2.47, 1],
+    [CAR + 0.6 - 2.47, 2],
+  ].forEach(([d, k]) => {
+    const m = crowd.take('waiter')
+    if (!m) return
+    crowd.put(m, scene, w.x + d + (k - 1) * 0.3, 0, w.z + 2.7, Math.PI, 'stand', 11 + k * 5)
+    m.door = w.x + d
+  })
+  const clerk = crowd.take('clerk')
+  if (clerk) crowd.put(clerk, scene, town.clerk.x, 0, town.clerk.z, -Math.PI / 2, 'stand', 0, false)
+}
+
+/**
+ * 電車が中央町に来る時に、乗客を座らせる。前の電車に乗らなかった時は、もう乗っているので何もしない
+ */
+const seatPassengers = () => {
+  if (crowd.people.some((m) => m.used && (m.tag === 'rider' || m.tag === 'sleeper'))) return
+  SEATED.forEach(([c, x, s, leave], k) => {
+    const m = crowd.take('rider')
+    if (!m) return
+    const cx = c * (CAR + 0.6)
+    crowd.put(m, train.root, cx + x, -0.37, s * 1.12, s > 0 ? Math.PI : 0, 'sit', k * 7 + 3)
+    m.leaveAt = leave
+    m.car = cx
+    // 何人かは、うつむいて眠っている
+    if (leave === null || k % 4 === 1) m.p.head.rotation.x = 0.55
+    if (leave === null) m.tag = 'sleeper'
+  })
+}
+
+/**
+ * ホームで待っていた人が、ドアが開いたら電車に乗り、ドアの近くに立つ
+ */
+const boardWaiters = () => {
+  const w = workStation.stop
+  crowd.people
+    .filter((m) => m.used && m.tag === 'waiter')
+    .forEach((m, k) => {
+      crowd.walk(m, [v3(m.door, 0, w.z + 1.8), v3(m.door + (k % 2 ? 0.4 : -0.4), 0, w.z + 0.75)], {
+        speed: 1.3,
+        wait: 0.6 + k * 0.3,
+        done: () => {
+          train.root.attach(m.p.group)
+          m.tag = 'rider'
+          m.leaveAt = k === 0 ? 1 : 2
+          m.car = m.door - w.x > CAR / 2 ? CAR + 0.6 : 0
+          m.p.group.rotation.y = k % 2 ? 0 : Math.PI
+        },
+      })
+    })
+}
+
+/**
+ * 乗客を、いちばん近いドアからホームへ出す道すじ (電車の中の座標)
+ */
+const riderExit = (m) => {
+  const g = m.p.group.position
+  const door = DOORS.map((d) => m.car + d).sort((a, c) => Math.abs(a - g.x) - Math.abs(c - g.x))[0]
+  const side = g.z > 0 ? 1 : -1
+  return {
+    door,
+    points: [v3(g.x, 0, side * 0.3), v3(door, 0, 0.2), v3(door, 0, 1.45), v3(door, 0, 2.6)],
+  }
+}
+
+/**
+ * 途中の駅で、その駅で降りる乗客を、ドアからホームへ歩かせる。降りたらホームに移して、ホームと一緒に流す
+ */
+const leavePassengers = (leg) => {
+  crowd.people
+    .filter((m) => m.used && m.tag === 'rider' && m.leaveAt === leg)
+    .forEach((m, k) => {
+      const { door, points } = riderExit(m)
+      m.tag = 'leave'
+      crowd.walk(m, points, {
+        speed: 1.25,
+        wait: 0.3 + k * 0.55 + Math.random() * 0.3,
+        done: () => {
+          ride.stop.attach(m.p.group)
+          m.tag = 'gone'
+          const away = (Math.random() < 0.5 ? -1 : 1) * (4 + Math.random() * 4)
+          crowd.walk(m, [v3(door + away * 0.3, 0, 3.4), v3(door + away, 0, 4.4)], { speed: 1.2 })
+        },
+      })
+    })
+}
+
+/**
+ * 終点の月見台で、残っていた乗客を降ろして、改札の方へ歩かせる。寝ている1人は降りない
+ */
+const leaveAtTerminal = (stop) => {
+  crowd.people
+    .filter((m) => m.used && m.tag === 'rider')
+    .forEach((m, k) => {
+      const { points } = riderExit(m)
+      m.tag = 'leave'
+      crowd.walk(m, points, {
+        speed: 1.25,
+        wait: 0.4 + k * 0.6,
+        done: () => {
+          scene.attach(m.p.group)
+          m.tag = 'gone'
+          const p = m.p.group.position
+          crowd.walk(
+            m,
+            [v3(p.x, 0, stop.z + 3.8), v3(stop.x, 0, stop.z + 5.8), v3(stop.x, 0, stop.z + 9)],
+            {
+              speed: 1.2,
+              done: () => crowd.release(m),
+            },
+          )
+        },
+      })
+    })
+}
+
+/**
+ * 電車の中の乗客の顔を消す / 戻す。消している間は、みんな首だけこちらへ向ける
+ */
+const blankRiders = (on) => {
+  const base = train.root.position
+  crowd.people
+    .filter((m) => m.used && (m.tag === 'rider' || m.tag === 'sleeper'))
+    .forEach((m) => {
+      m.p.blank(on)
+      if (!on) {
+        m.p.head.rotation.y = 0
+        m.p.head.rotation.z = 0
+        return
+      }
+      m.p.head.rotation.z = (m.k % 2 ? 1 : -1) * 0.25
+      const g = m.p.group
+      const yaw = Math.atan2(S.pos.x - base.x - g.position.x, S.pos.z - base.z - g.position.z)
+      const turn = Math.atan2(Math.sin(yaw - g.rotation.y), Math.cos(yaw - g.rotation.y))
+      m.p.head.rotation.y = THREE.MathUtils.clamp(turn, -1.5, 1.5)
+    })
+}
+
+const ghostHead = new THREE.Vector3()
+
+/**
+ * 港北のホームの、ドアの前に面無し様を立たせる。ホームと一緒に寄ってきて、こちらを向いている
+ */
+const placePlatformGhost = () => {
+  const local = S.pos.x - train.root.position.x
+  const door = DOORS.reduce((best, d) => (Math.abs(d - local) < Math.abs(best - local) ? d : best))
+  ride.stop.add(figure.group)
+  figure.group.position.set(door, 0, 2.35)
+  figure.group.rotation.y = Math.PI
+  figure.randomPose(0)
+  figure.group.visible = true
+}
+
+/**
+ * ホームの面無し様を消す。ドアが閉まる時に、明かりのちらつきの間に
+ */
+const hidePlatformGhost = () => {
+  if (figure.group.parent !== ride.stop) return
+  scene.add(figure.group)
+  figure.group.visible = false
+  sound.flicker()
+}
+
+/**
+ * 港北で止まっている間。面無し様と目が合い続けると死ぬ (ふつう以上)
+ */
+const watchPlatformGhost = (T, dt) => {
+  if (figure.group.parent !== ride.stop) return
+  if (T.t > 3.4 && !T.warned) {
+    T.warned = true
+    whisper('目を、合わせないで。')
+    sound.whisper()
+  }
+  figure.group.getWorldPosition(ghostHead)
+  ghostHead.y += 1.62
+  updateFrustum()
+  sphere.center.copy(ghostHead)
+  const looking = T.warned && frustum.intersectsSphere(sphere) && lookingAt(ghostHead, 0.2)
+  T.stare = looking ? (T.stare || 0) + dt : 0
+  if (!S.level.events || T.stare < 1.6) return
+  scene.add(figure.group)
+  oddDeath('目が、合いました。')
+}
+
+/**
+ * 次の駅の案内。ドアの上の表示と、車内の放送
+ */
+const announceNext = (k) => {
+  const leg = LEGS[k]
+  train.display.draw(leg.name, leg.roman)
+  sound.chime(0.1)
+  whisper(leg.last ? `次は、終点、${leg.name}です。` : `次は、${leg.name}です。`, 3200)
+}
+
 /**
  * 電車の1フレーム分。中央町のホームで待つ -> 電車が来る -> 乗るとドアが閉まって発車 -> 走る ->
- * まもなく月見台 -> 止まってドアが開く -> 降りたら閉まって走り去る
+ * 港北、西原に止まり、乗客が降りていく -> 終点の月見台に止まってドアが開く -> 降りたら閉まって走り去る
  */
 const updateTrip = (dt) => {
   const T = S.trip
@@ -642,6 +913,7 @@ const updateTrip = (dt) => {
         f.on = true
       })
       train.display.draw('中央町', 'Chuo-cho', '')
+      seatPassengers()
       carryTrain(trainTo.set(work.x - BRAKE - 110, 0, work.z))
       sound.chime(0.1)
       whisper('まもなく、1番線に、月見台方面の電車が参ります。', 3600)
@@ -661,22 +933,27 @@ const updateTrip = (dt) => {
       T.t = 0
       T.left = 0
       sound.doorHiss()
+      boardWaiters()
     }
   } else if (T.phase === 'board') {
     train.setOpen(Math.min(T.t / 1.2, 1))
-    if (S.tag.startsWith('@T')) T.left += dt
+    if (S.tag.startsWith('@T')) {
+      T.left += dt
+      if (!S.checkpoint) S.checkpoint = 'train'
+    }
     if (T.left > 2.5) {
       T.phase = 'shut'
       T.t = 0
       sound.doorHiss()
       whisper('ドアが閉まります。', 2000)
+      crowd.people.filter((m) => m.used && m.tag === 'waiter').forEach(crowd.finish)
     }
   } else if (T.phase === 'shut') {
     train.setOpen(Math.max(0, 1 - T.t / 1.2))
     if (T.t > 1.6) {
       T.phase = 'depart'
       T.t = 0
-      train.display.draw('月見台', 'Tsukimidai')
+      train.display.draw(LEGS[0].name, LEGS[0].roman)
     }
   } else if (T.phase === 'depart') {
     T.speed = Math.min(CRUISE, 2.6 * T.t)
@@ -690,24 +967,24 @@ const updateTrip = (dt) => {
       }
       T.phase = 'cruise'
       T.t = 0
+      T.leg = 0
       carryTrain(trainTo.copy(RIDE))
       ride.group.visible = true
-      sound.chime(0.1)
-      whisper('次は、月見台です。', 3200)
+      announceNext(0)
     }
   } else if (T.phase === 'cruise') {
     ride.update(dt, T.speed)
-    // 走り出して、車内の明かりが光を受け持ってから、窓に映る車内を撮る。隣の車両の人は写さない
-    if (T.t > 0.4 && !T.shot) {
-      T.shot = true
+    // 走り出して、車内の明かりが光を受け持ってから、窓に映る車内を撮る。駅を出るたびに撮り直す
+    if (T.t > 0.4 && T.shot !== T.leg) {
+      T.shot = T.leg
       const shown = figure.group.visible
       figure.group.visible = false
       train.capture(renderer)
       figure.group.visible = shown
     }
-    if (T.t > 12 && !T.crossed) {
+    if (T.leg === 1 && T.t > 3 && !T.crossed) {
       T.crossed = true
-      ride.cross(180)
+      ride.cross(160)
     }
     if (ride.crossingNear()) {
       T.bell -= dt
@@ -716,14 +993,106 @@ const updateTrip = (dt) => {
         sound.bell(0.07)
       }
     }
-    if (T.t > 24) {
+    // 港北と西原のあいだで、車内の明かりが一瞬消える。点き直すと、乗客みんなの顔が無く、こちらを向いている。
+    // もう一度消えて点くと、元に戻っている
+    if (T.leg === 1 && T.t > 6 && !T.flicked) {
+      T.flicked = true
+      T.flick = 0
+      train.setLit(false)
+      sound.flicker()
+    }
+    if (T.flick !== undefined && T.flick >= 0) {
+      const before = T.flick
+      T.flick += dt
+      const at = (x) => before < x && T.flick >= x
+      if (at(0.35)) {
+        train.setLit(true)
+        blankRiders(true)
+        sound.whisper()
+        sound.heartbeat(0.5)
+      }
+      if (at(1.75)) {
+        train.setLit(false)
+        sound.flicker()
+      }
+      if (at(2.05)) {
+        train.setLit(true)
+        blankRiders(false)
+        T.flick = -1
+      }
+    }
+    const leg = LEGS[T.leg]
+    if (T.t > leg.run && leg.last) {
       T.phase = 'arrive'
       T.t = 0
       carryTrain(trainTo.set(stop.x - BRAKE, 0, stop.z))
       ride.group.visible = false
       train.display.draw('月見台', 'Tsukimidai', 'まもなく')
       sound.chime(0.1)
-      whisper('まもなく、月見台です。', 3200)
+      whisper('まもなく、終点、月見台です。', 3200)
+    } else if (T.t > leg.run) {
+      T.phase = 'slow'
+      T.t = 0
+      ride.approach(leg)
+      train.display.draw(leg.name, leg.roman, 'まもなく')
+      sound.chime(0.1)
+      whisper(`まもなく、${leg.name}です。`, 3200)
+      // 港北では、ホームに面無し様が立っている。ポケットの鈴が、ひとりでに鳴る
+      if (T.leg === 0) {
+        placePlatformGhost()
+        sound.suzu(0.07)
+      }
+    }
+  } else if (T.phase === 'slow') {
+    const k = Math.min(T.t / ((2 * BRAKE) / CRUISE), 1)
+    T.speed = CRUISE * (1 - k)
+    ride.update(dt, T.speed)
+    ride.alignStop(BRAKE * (1 - k) ** 2)
+    if (k >= 1) {
+      T.phase = 'halt'
+      T.t = 0
+      T.speed = 0
+      T.said = false
+      T.warned = false
+      T.stare = 0
+      sound.doorHiss()
+      train.display.draw(LEGS[T.leg].name, LEGS[T.leg].roman, '')
+    }
+  } else if (T.phase === 'halt') {
+    // 途中の駅。ドアは開くが、ホームへは渡れない
+    const leg = LEGS[T.leg]
+    train.setOpen(Math.min(T.t / 1.2, 1), false)
+    if (T.t > 1.2 && !T.said) {
+      T.said = true
+      whisper(`${leg.name}、${leg.name}です。`, 3000)
+      leavePassengers(T.leg)
+    }
+    watchPlatformGhost(T, dt)
+    if (S.mode !== 'play') return
+    if ((T.t > 7 && crowd.walking('leave') === 0) || T.t > 16) {
+      T.phase = 'reshut'
+      T.t = 0
+      sound.doorHiss()
+      whisper('ドアが閉まります。', 2000)
+      hidePlatformGhost()
+    }
+  } else if (T.phase === 'reshut') {
+    train.setOpen(Math.max(0, 1 - T.t / 1.2), false)
+    if (T.t > 1.6) {
+      T.phase = 'pull'
+      T.t = 0
+      ride.leaveStop()
+      const next = LEGS[T.leg + 1]
+      train.display.draw(next.name, next.roman)
+    }
+  } else if (T.phase === 'pull') {
+    T.speed = Math.min(CRUISE, 2.6 * T.t)
+    ride.update(dt, T.speed)
+    if (T.speed >= CRUISE) {
+      T.phase = 'cruise'
+      T.t = 0
+      T.leg += 1
+      announceNext(T.leg)
     }
   } else if (T.phase === 'arrive') {
     const k = Math.min(T.t / ((2 * BRAKE) / CRUISE), 1)
@@ -739,18 +1108,25 @@ const updateTrip = (dt) => {
     train.setOpen(Math.min(T.t / 1.2, 1))
     if (T.t > 1.2 && !T.said) {
       T.said = true
-      whisper('月見台、月見台です。', 3000)
+      whisper('月見台、月見台です。この電車は、ここまでです。', 3600)
       // 降りていいのか迷わないように、ここだけは自動で降ろす
       if (S.tag.startsWith('@T')) S.auto = trainExitPath(stop)
+      leaveAtTerminal(stop)
     }
     if (S.tag.startsWith('@H')) {
       T.left += dt
-      S.checkpoint = true
+      S.checkpoint = 'home'
     }
     if (T.left > 3) {
       T.phase = 'close'
       T.t = 0
       sound.doorHiss()
+      const sleeper = crowd.people.find((m) => m.used && m.tag === 'sleeper')
+      if (sleeper) {
+        sleeper.p.blank(true)
+        sleeper.p.head.rotation.x = 0
+        sleeper.p.head.rotation.y = -0.9
+      }
     }
   } else if (T.phase === 'close') {
     train.setOpen(Math.max(0, 1 - T.t / 1.2))
@@ -764,14 +1140,22 @@ const updateTrip = (dt) => {
     carryTrain(trainTo.set(stop.x + dist, 0, stop.z))
     if (dist > 170) {
       T.phase = 'gone'
+      crowd.people
+        .filter((m) => m.used && (m.tag === 'rider' || m.tag === 'sleeper'))
+        .forEach(crowd.release)
       train.root.visible = false
       train.fixtures.forEach((f) => {
         f.on = false
       })
     }
   }
+  if (!ride.stop.visible) {
+    crowd.people
+      .filter((m) => m.used && m.tag === 'gone' && m.p.group.parent === ride.stop)
+      .forEach(crowd.release)
+  }
   // 走る音と、レールのつなぎ目の音。乗っている間は、少し揺れる
-  const moving = ['cruise', 'arrive', 'leave'].includes(T.phase)
+  const moving = ['cruise', 'slow', 'pull', 'arrive', 'leave'].includes(T.phase)
   const onboard = S.tag.startsWith('@T')
   sound.setTrain(moving ? (onboard ? 1 : 0.6) * Math.min(1, T.speed / CRUISE + 0.15) : 0)
   T.sway = moving && onboard ? Math.min(1, T.speed / CRUISE) : 0
@@ -1178,7 +1562,7 @@ const updateSlam = (dt) => {
  */
 const echoVolume = () => {
   // 月見台から家までの道では、だれかがついてくる
-  if (S.tag === 'S' && S.checkpoint && !S.inside) return 0.12
+  if (S.tag === 'S' && S.checkpoint === 'home' && !S.inside) return 0.12
   const L = level()
   if (L < 1 || S.final) return 0
   return Math.min(0.08 + 0.07 * (L - 1), 0.3)
@@ -2157,24 +2541,37 @@ const updateStory = (dt) => {
     }
     return
   }
-  if (st.stage === 'ride' && T && T.phase === 'cruise') {
+  // 西原を出て、乗客がほとんどいなくなってから、隣の車両に現れる
+  if (st.stage === 'ride' && T && T.phase === 'cruise' && T.leg === LEGS.length - 1) {
     st.stage = 'car'
     figure.randomPose(0)
     figure.group.visible = true
+    sound.suzu(0.08)
+    setTimeout(() => whisper('隣の車両に、だれかいる。', 3000), 1200)
   }
   if (st.stage !== 'car') return
+  // 目を離すたびに、3.5m ずつ近づく。近づくたびに、ポケットの鈴がひとりでに鳴る。
+  // ふつう以上では、隣の車両を抜けてこちらの車両まで来て、追いつかれると死ぬ
   const base = train.root.position
-  figure.group.position.set(base.x + CAR + 0.6 + st.carX, 0, base.z)
+  figure.group.position.set(base.x + st.carX, 0, base.z)
   figure.group.rotation.y = -Math.PI / 2
+  const limit = S.level.events ? -20 : CAR / 2 + 2
   if (inView()) {
     st.unseen = 0
   } else {
     st.unseen += dt
-    if (st.unseen > 2.2 && st.carX > -8) {
-      st.carX -= 4
+    if (st.unseen > 1.4 && st.carX > limit) {
+      st.carX -= 3.5
       st.unseen = 0
       sound.step(0.12, { muffle: 0.5 })
+      sound.suzu(0.05)
     }
+  }
+  if (S.level.events && st.carX - (S.pos.x - base.x) < 1.2) {
+    S.yaw = Math.atan2(-(figure.group.position.x - S.pos.x), -(figure.group.position.z - S.pos.z))
+    die('隣の車両から、来ていました。', 0.7)
+    faceToFace()
+    return
   }
   if (T && T.phase === 'arrive' && T.t > 3) {
     figure.group.visible = false
@@ -2236,6 +2633,8 @@ const updateRattle = (dt) => {
  */
 const updatePlay = (dt) => {
   updateTrip(dt)
+  if (S.mode !== 'play') return
+  crowd.update(dt)
   updateTown(dt)
   updateShrine()
   updateStory(dt)
@@ -2459,6 +2858,8 @@ if (import.meta.env.DEV) {
     scene,
     camera,
     seeker,
+    crowd,
+    ride,
     homeStation,
     train,
     town,

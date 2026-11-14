@@ -668,6 +668,8 @@ export const buildTown = (scene, origin, shared) => {
     // ロビーのエレベーターの前。ここから始める
     start: new THREE.Vector3(X(-2.4), 0, Z(-8.6)),
     door: new THREE.Vector3(X(0), 0, Z(3)),
+    // コンビニの店員の立つ場所 (レジのうしろ)
+    clerk: new THREE.Vector3(X(24.35), 0, Z(-0.95)),
     // 歩道に落ちている鈴と、その場所
     shrine: { bell, at: bell.position.clone() },
     stationOrigin: [X(70), Z(3)],

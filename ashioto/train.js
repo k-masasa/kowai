@@ -6,6 +6,7 @@ import {
   glareTexture,
   moquetteTexture,
   stainlessTexture,
+  stationBoardTexture,
   trainAdTexture,
   trainDisplay,
   trainFloorTexture,
@@ -579,8 +580,9 @@ export const buildTrain = (scene, shared) => {
 
   /**
    * ホームの側 (+z) のドアを、開き具合 k (0 から 1) にする。開いている間は、ホームへ渡れる
+   * @param bridge - ホームへ渡れるようにするか。途中の駅では降りられないので false
    */
-  const setOpen = (k) => {
+  const setOpen = (k, bridge = true) => {
     doors.forEach(({ panels, side }) => {
       if (side < 0) return
       panels.forEach((g) => {
@@ -588,7 +590,7 @@ export const buildTrain = (scene, shared) => {
       })
     })
     bridges.forEach((z) => {
-      z.on = k > 0.8
+      z.on = bridge && k > 0.8
     })
   }
 
@@ -616,14 +618,15 @@ export const buildTrain = (scene, shared) => {
   let captured = false
 
   /**
-   * 車内を撮って、窓ガラスや金属、白い壁に映り込ませる。走っていて、車内の明かりが点いている時に1回だけ呼ぶ
+   * 車内を撮って、窓ガラスや金属、白い壁に映り込ませる。走っていて、車内の明かりが点いている時に呼ぶ。
+   * 乗客が降りたら、撮り直す
    */
   const capture = (renderer) => {
-    if (captured) return
-    captured = true
     cubeCamera.position.set(root.position.x, 1.5, root.position.z)
     cubeCamera.updateMatrixWorld()
     cubeCamera.update(renderer, scene)
+    if (captured) return
+    captured = true
     shine.forEach(([m, k]) => {
       m.envMap = cubeTarget.texture
       m.envMapIntensity = k
@@ -653,14 +656,28 @@ export const buildTrain = (scene, shared) => {
     })
   }
 
-  return { root, place, setOpen, display, fixtures, capture, lightOutside }
+  const lightBase = mat.light.color.clone()
+
+  /**
+   * 車内の明かりを点ける / 消す。天井の明かりの列と、本物の光の両方
+   */
+  const setLit = (on) => {
+    mat.light.color.copy(lightBase).multiplyScalar(on ? 1 : 0.04)
+    fixtures.forEach((f) => {
+      f.on = on
+    })
+  }
+
+  return { root, place, setOpen, display, fixtures, capture, lightOutside, setLit }
 }
 
 /**
- * 走っている間に窓の外を流れる景色。家の明かり、街灯、架線の柱、踏切。電車は止めたまま、景色を動かす
+ * 走っている間に窓の外を流れる景色。家の明かり、街灯、架線の柱、踏切、途中の駅のホーム。
+ * 電車は止めたまま、景色を動かす
  * @param center - 電車を置く場所 (1両目の真ん中)
+ * @param shared - { fixtures }。途中の駅のホームの照明を足す
  */
-export const buildRideScenery = (scene, center) => {
+export const buildRideScenery = (scene, center, shared) => {
   const group = new THREE.Group()
   group.position.copy(center)
   scene.add(group)
@@ -694,7 +711,7 @@ export const buildRideScenery = (scene, center) => {
   const house = () => {
     const g = new THREE.Group()
     const side = Math.random() < 0.5 ? -1 : 1
-    const z = side * (7 + Math.random() * 22)
+    const z = side * (10 + Math.random() * 20)
     const h = 4 + Math.random() * (Math.random() < 0.2 ? 14 : 5)
     const w = 5 + Math.random() * 6
     const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, 6), dark)
@@ -722,7 +739,7 @@ export const buildRideScenery = (scene, center) => {
    */
   const streetLamp = () => {
     const g = new THREE.Group()
-    const z = (Math.random() < 0.5 ? -1 : 1) * (5 + Math.random() * 6)
+    const z = (Math.random() < 0.5 ? -1 : 1) * (7.5 + Math.random() * 5)
     const pole = new THREE.Mesh(new THREE.BoxGeometry(0.12, 6, 0.12), dark)
     pole.position.set(0, 1.8, z)
     const light = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), lamp)
@@ -767,6 +784,73 @@ export const buildRideScenery = (scene, center) => {
   group.add(crossing)
   let blink = 0
 
+  // 途中の駅のホーム。止まる時だけ出して、景色と一緒に流す。ドアの開く +z の側にある。
+  // 1両目の真ん中を x = 0 にして組む。approach() で駅名を貼り替えて出し、alignStop() で止まる場所へ寄せる
+  const stop = new THREE.Group()
+  stop.visible = false
+  group.add(stop)
+  const pm = {
+    concrete: new THREE.MeshStandardMaterial({ color: 0x75746f, roughness: 0.95 }),
+    edge: new THREE.MeshStandardMaterial({ color: 0xd8d5cc, roughness: 0.7 }),
+    tactile: new THREE.MeshStandardMaterial({ color: 0xd4a91c, roughness: 0.7 }),
+    steel: new THREE.MeshStandardMaterial({ color: 0x5c6066, roughness: 0.5, metalness: 0.5 }),
+    tube: new THREE.MeshBasicMaterial({ color: 0xf2f6ff }),
+    bench: new THREE.MeshStandardMaterial({ color: 0x3c6e9e, roughness: 0.5 }),
+    vend: new THREE.MeshBasicMaterial({ color: 0xdfe8ee }),
+    vendBody: new THREE.MeshStandardMaterial({ color: 0xb8262a, roughness: 0.5 }),
+  }
+  const sb = makeBuilder()
+  box(sb, pm.concrete, -45, 45, -1.2, 0, 1.5, 6.5)
+  box(sb, pm.edge, -45, 45, -0.02, 0.012, 1.5, 1.62)
+  flat(sb, pm.tactile, 0.006, -45, 45, 1.95, 2.25, 1)
+  box(sb, pm.steel, -20, 20, 3.2, 3.32, 1.8, 6.5)
+  ;[-15, -5, 5, 15].forEach((x) => box(sb, pm.steel, x - 0.08, x + 0.08, 0, 3.2, 5.5, 5.66))
+  for (let x = -14; x <= 14; x += 4) box(sb, pm.tube, x - 0.6, x + 0.6, 3.14, 3.19, 4.1, 4.2)
+  ;[-6, 9].forEach((x) => {
+    box(sb, pm.bench, x - 0.9, x + 0.9, 0.42, 0.47, 5.3, 5.75)
+    box(sb, pm.bench, x - 0.9, x + 0.9, 0.47, 0.85, 5.72, 5.78)
+    ;[-0.8, 0.8].forEach((d) => box(sb, pm.steel, x + d - 0.03, x + d + 0.03, 0, 0.42, 5.4, 5.6))
+  })
+  box(sb, pm.vendBody, 12, 12.95, 0, 1.83, 5.75, 6.4)
+  wallZ(sb, pm.vend, 5.745, 12.08, 12.87, 0.75, 1.75, -1)
+  wallZ(sb, dark, 6.5, -45, 45, 0, 1.6, -1)
+  ;[1.65, 3.35].forEach((x) => box(sb, pm.steel, x - 0.03, x + 0.03, 0, 2.3, 3.87, 3.93))
+  sb.build(stop)
+  const boardMats = new Map()
+  const board = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 0.63))
+  board.position.set(2.5, 1.95, 3.86)
+  board.rotation.y = Math.PI
+  stop.add(board)
+  const stopLights = [-12, -4, 4, 12].map((x) => {
+    const f = {
+      pos: new THREE.Vector3(),
+      local: new THREE.Vector3(x, 2.9, 4.15),
+      color: new THREE.Color(0xeef3ff),
+      power: 4.5,
+      dist: 9,
+      glow: null,
+      base: null,
+      on: false,
+      level: 1,
+      stutter: 0,
+      faulty: false,
+      outdoor: true,
+    }
+    shared.fixtures.push(f)
+    return f
+  })
+  let stopFree = false
+
+  /**
+   * 途中の駅のホームの照明の場所を、ホームの今の場所に合わせる
+   */
+  const placeStopLights = () => {
+    stopLights.forEach((f) => {
+      f.pos.copy(f.local).add(stop.position).add(group.position)
+      f.on = stop.visible
+    })
+  }
+
   /**
    * 景色を、速さ speed (m/秒) で後ろへ流す
    */
@@ -783,6 +867,11 @@ export const buildRideScenery = (scene, center) => {
       crossing.position.x -= speed * dt
       if (crossing.position.x < -150) crossing.visible = false
     }
+    if (stop.visible && stopFree) {
+      stop.position.x -= speed * dt
+      if (stop.position.x < -120) stop.visible = false
+    }
+    placeStopLights()
     blink += dt
     const on = Math.floor(blink * 2.4) % 2 === 0
     lights[0].visible = on
@@ -802,5 +891,35 @@ export const buildRideScenery = (scene, center) => {
    */
   const crossingNear = () => crossing.visible && Math.abs(crossing.position.x) < 40
 
-  return { group, update, cross, crossingNear }
+  /**
+   * 途中の駅のホームを、止まる前に出す。駅名標を、その駅のものに貼り替える
+   * @param o - { name, kana, roman, prev, next } (prev / next は [ひらがな, 漢字])
+   */
+  const approach = (o) => {
+    if (!boardMats.has(o.name)) {
+      const map = stationBoardTexture({ color: '#2e8b57', ...o })
+      boardMats.set(o.name, new THREE.MeshStandardMaterial({ map, roughness: 0.5 }))
+    }
+    board.material = boardMats.get(o.name)
+    stop.visible = true
+    stopFree = false
+    placeStopLights()
+  }
+
+  /**
+   * 止まるまでの残りの長さ (m) に合わせて、ホームを寄せる。0 で、ドアの前にホームが来る
+   */
+  const alignStop = (rest) => {
+    stop.position.x = rest
+    placeStopLights()
+  }
+
+  /**
+   * 走り出したので、ホームを景色と一緒に流す
+   */
+  const leaveStop = () => {
+    stopFree = true
+  }
+
+  return { group, update, cross, crossingNear, stop, approach, alignStop, leaveStop }
 }
