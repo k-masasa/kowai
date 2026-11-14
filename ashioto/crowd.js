@@ -44,6 +44,7 @@ export const createCrowd = (count) => {
    * 人を返す。見えなくして、入れ物から外す
    */
   const release = (m) => {
+    m.p.unbake()
     m.used = false
     m.tag = ''
     m.path = null
@@ -79,6 +80,7 @@ export const createCrowd = (count) => {
    * 座っていれば立ち上がる。wait 秒待ってから歩き出し、着いたら done を呼ぶ
    */
   const walk = (m, points, { speed = 1.2, wait = 0, done = null } = {}) => {
+    m.p.unbake()
     m.p.stand()
     m.path = [m.p.group.position.clone(), ...points]
     m.seg = 0

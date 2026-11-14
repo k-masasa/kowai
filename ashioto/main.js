@@ -732,6 +732,8 @@ const seatPassengers = () => {
     // 何人かは、うつむいて眠っている
     if (leave === null || k % 4 === 1) m.p.head.rotation.x = 0.55
     if (leave === null) m.tag = 'sleeper'
+    // 座っている間は動かないので、部品をまとめて軽くする
+    m.p.bake()
   })
 }
 
@@ -752,6 +754,7 @@ const boardWaiters = () => {
           m.leaveAt = k === 0 ? 1 : 2
           m.car = m.door - w.x > CAR / 2 ? CAR + 0.6 : 0
           m.p.group.rotation.y = k % 2 ? 0 : Math.PI
+          m.p.bake()
         },
       })
     })

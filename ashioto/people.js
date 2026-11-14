@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
 // 上着の色。住人ごとに変える
 const COATS = [0x3b4252, 0x5a4c3e, 0x2c3a2e, 0x6b6f75, 0x4a2f2c, 0x1e2228]
@@ -162,6 +163,7 @@ export const createPerson = ({ shadow = true } = {}) => {
    * @param items - スマホかかばんを持たせるか。店員のように、何も持たない人は false
    */
   const dress = (seed, strange, items = true) => {
+    unbake()
     stiff = strange
     coat.color.setHex(strange ? 0x16171a : COATS[seed % COATS.length])
     skull.material = strange ? faces.plain : faces.face
@@ -242,5 +244,54 @@ export const createPerson = ({ shadow = true } = {}) => {
     group.rotation.y = Math.atan2(target.x - group.position.x, target.z - group.position.z)
   }
 
-  return { group, head, dress, walk, face, sit, stand, blank }
+  // 動かない間だけ、首から下の部品をマテリアルごとに1つにまとめた物
+  let baked = null
+  const hiddenParts = []
+  const inverse = new THREE.Matrix4()
+  const local = new THREE.Matrix4()
+
+  /**
+   * 今の姿勢のまま、首から下の部品を、マテリアルごとに1つの形にまとめる。座ったまま動かない乗客のように、
+   * 大勢を出す時に描く回数を減らす。頭は首を回せるように、まとめない。unbake() で元に戻す
+   */
+  const bake = () => {
+    unbake()
+    group.updateMatrixWorld(true)
+    inverse.copy(group.matrixWorld).invert()
+    const lists = new Map()
+    group.traverse((o) => {
+      if (!o.isMesh || !o.visible) return
+      if (o.parent === head) return
+      const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone()
+      g.applyMatrix4(local.multiplyMatrices(inverse, o.matrixWorld))
+      if (!lists.has(o.material)) lists.set(o.material, [])
+      lists.get(o.material).push(g)
+      hiddenParts.push(o)
+    })
+    hiddenParts.forEach((o) => {
+      o.visible = false
+    })
+    baked = new THREE.Group()
+    lists.forEach((list, material) => {
+      baked.add(new THREE.Mesh(mergeGeometries(list), material))
+      list.forEach((g) => g.dispose())
+    })
+    group.add(baked)
+  }
+
+  /**
+   * まとめた形を捨てて、部品を元どおり見えるようにする
+   */
+  const unbake = () => {
+    if (!baked) return
+    baked.children.forEach((m) => m.geometry.dispose())
+    group.remove(baked)
+    baked = null
+    hiddenParts.forEach((o) => {
+      o.visible = true
+    })
+    hiddenParts.length = 0
+  }
+
+  return { group, head, dress, walk, face, sit, stand, blank, bake, unbake }
 }
