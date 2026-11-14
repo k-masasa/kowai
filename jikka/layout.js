@@ -1,9 +1,6 @@
 // じっかの間取りのデータ。部屋 (床の種類)、壁 (戸口と窓)、家具と明かり。
-// いじるモードで変えられるのは、ここにある物。家の骨組み (土台・屋根・階段・床の間など) は house.js にある。
+// 間取りを直す時は、まずここを直す。家の骨組み (土台・屋根・階段・床の間など) は house.js にある。
 // 単位は m。x は東西 (東が +)、z は南北 (南が +)、y は高さ。1間 = 1.82 m で組む。
-// いじるモードで書き出したものを取りこんだら、LAYOUT_VERSION を1つ上げる (ブラウザに残った変更を消すため)
-
-export const LAYOUT_VERSION = 1
 
 // 母屋の床、天井、外壁の上の高さ
 export const FLOOR = 0.5
@@ -21,20 +18,12 @@ export const N_TOP = 5.4 + (0.45 * 1.9) / (7.28 / 2 + 0.45)
 export const B_TOP = 2.6 + (0.5 * 1.5) / (7.28 / 2 + 0.5)
 export const S_TOP = 2.3 + (0.4 * 0.9) / (4 / 2 + 0.4)
 
-// 床の種類。いじるモードの K で、この順に変わる
+// 床の種類
 export const FLOOR_KINDS = {
   tatami: { label: '畳', mat: 'tatami', sound: 'tatami' },
   board: { label: '板', mat: 'board', sound: 'board' },
   flooring: { label: 'フローリング', mat: 'flooring', sound: 'board' },
   doma: { label: '土間', mat: 'doma', sound: 'hard' },
-}
-
-// 家の中の壁の種類。いじるモードの K で、この順に変わる
-export const WALL_KINDS = {
-  fusuma: 'ふすま',
-  shoji: '障子',
-  plaster: '土壁',
-  glass: 'ガラス戸',
 }
 
 // 母屋の部屋。y は床の高さ (無ければ FLOOR)、ceil は天井の高さ (無ければ CEIL)
@@ -72,7 +61,7 @@ export const ROOMS = [
   },
 ]
 
-// 壁。type が 'outer' は外壁 (外は下見板、内は土壁)、'inner' は家の中の壁、'solid' は1枚の材料の壁。
+// 壁。type が 'outer' は外壁 (外は下見板、内は土壁)、'inner' は家の中の壁 (kind は fusuma / shoji / plaster / glass)、'solid' は1枚の材料の壁。
 // axis が 'x' なら z = at の線上を x が from から to へ、'z' なら x = at の線上を z が from から to へ走る。
 // holes は開口。inner の壁は戸口だけ (高さは y0 から head)。outer と solid の壁は、door が付いていれば戸口、無ければ窓。
 // inner の壁の y0 と y1 は、無ければ FLOOR と CEIL

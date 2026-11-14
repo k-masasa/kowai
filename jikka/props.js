@@ -1,8 +1,7 @@
 import * as THREE from 'three'
 import { at, atScaled, box, makeBuilder, tube } from './kit.js'
 
-// 家具と明かり。1つずつ、置いた所の真ん中を原点にして組む (下の面が y = 0、前は +z)。
-// いじるモードで動かせるように、家具ごとに別のまとまりにしている
+// 家具と明かり。1つずつ、置いた所の真ん中を原点にして組む (下の面が y = 0、前は +z)
 
 const LEG = 0.05
 const DIAL = new THREE.CylinderGeometry(0.052, 0.052, 0.008, 20)
@@ -277,19 +276,6 @@ export const PROP_TYPES = {
   },
 }
 
-// いじるモードの 1 から 9 で置ける物
-export const PALETTE = [
-  { type: 'cardboard', name: '段ボール箱' },
-  { type: 'shelf', name: '棚' },
-  { type: 'table', name: '台', mat: 'furniture' },
-  { type: 'chest', name: 'たんす' },
-  { type: 'table', name: '座卓', w: 1.2, d: 0.76, h: 0.33, mat: 'darkWood' },
-  { type: 'kotatsu', name: 'こたつ' },
-  { type: 'tv', name: 'テレビ' },
-  { type: 'lamp', name: '蛍光灯', ceiling: true },
-  { type: 'bulb', name: '電球', ceiling: true },
-]
-
 /**
  * 家具の大きさ。y0 (下の端) と front (前に出る分) が無ければ 0
  */
@@ -339,18 +325,7 @@ export const createProps = (scene, mats) => {
     group.rotation.y = THREE.MathUtils.degToRad(p.rot ?? 0)
     group.updateMatrixWorld(true)
     root.add(group)
-    const item = {
-      p,
-      group,
-      size: s,
-      inv: group.matrixWorld.clone().invert(),
-      box: new THREE.Box3(
-        new THREE.Vector3(-s.w / 2, s.y0, -s.d / 2),
-        new THREE.Vector3(s.w / 2, s.y0 + s.h, s.d / 2 + s.front),
-      ),
-      walls: [],
-      fixture: null,
-    }
+    const item = { p, group, size: s, walls: [], fixture: null }
     if (type.solid !== false && p.solid !== false) {
       const [x0, x1, z0, z1] = [-s.w / 2, s.w / 2, -s.d / 2, s.d / 2 + s.front]
       corners[0].set(x0, 0, z0)
