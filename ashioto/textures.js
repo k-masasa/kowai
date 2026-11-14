@@ -696,84 +696,99 @@ const lines = (ctx, list, x, y, gap, font, color) => {
 }
 
 /**
- * 防犯カメラの画像。暗い通路に、顔の無い人が立っている。ざらつきと日時の表示つき
+ * 町内会の掲示板に重ねて貼ってある、お願いの紙。夜中に鈴の音がしても、外を見ないように
  */
-const cctvStill = (ctx, x, y, w, h) => {
-  ctx.save()
-  ctx.beginPath()
-  ctx.rect(x, y, w, h)
-  ctx.clip()
-  const bg = ctx.createLinearGradient(x, y, x, y + h)
-  bg.addColorStop(0, '#3b3f3c')
-  bg.addColorStop(1, '#1e201f')
-  ctx.fillStyle = bg
-  ctx.fillRect(x, y, w, h)
-  ctx.fillStyle = 'rgba(160, 165, 155, 0.18)'
-  ctx.fillRect(x, y + h * 0.72, w, h * 0.28)
-  const cx = x + w * 0.54
-  ctx.fillStyle = '#0c0c0d'
-  ctx.beginPath()
-  ctx.moveTo(cx - w * 0.2, y + h)
-  ctx.quadraticCurveTo(cx - w * 0.2, y + h * 0.5, cx, y + h * 0.48)
-  ctx.quadraticCurveTo(cx + w * 0.2, y + h * 0.5, cx + w * 0.2, y + h)
-  ctx.fill()
-  ctx.fillStyle = '#a9a39a'
-  ctx.beginPath()
-  ctx.ellipse(cx, y + h * 0.36, w * 0.075, h * 0.1, 0, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.fillStyle = '#0c0c0d'
-  ctx.beginPath()
-  ctx.ellipse(cx, y + h * 0.3, w * 0.082, h * 0.07, 0, Math.PI, Math.PI * 2)
-  ctx.fill()
-  for (let i = 0; i < 2600; i++) {
-    ctx.fillStyle = `rgba(255, 255, 255, ${Math.random() * 0.12})`
-    ctx.fillRect(x + Math.random() * w, y + Math.random() * h, 1.5, 1.5)
-  }
-  for (let yy = y; yy < y + h; yy += 3) {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.12)'
-    ctx.fillRect(x, yy, w, 1)
-  }
-  ctx.font = `600 13px ${GOTHIC}`
-  ctx.fillStyle = 'rgba(235, 235, 225, 0.85)'
-  ctx.textAlign = 'left'
-  ctx.textBaseline = 'top'
-  ctx.fillText('CAM 03  2026/11/09 23:41', x + 8, y + 7)
-  ctx.restore()
-}
-
-/**
- * 指名手配の紙。名前も年齢も分からず、写真は防犯カメラの画像。駅の交番の前にも、同じものが貼ってある
- */
-export const wantedPosterTexture = () =>
+export const suzuNoticeTexture = () =>
   canvasTexture(512, 724, (ctx, w, h) => {
-    ctx.fillStyle = '#efece3'
+    ctx.fillStyle = '#ebe4d2'
     ctx.fillRect(0, 0, w, h)
-    stains(ctx, w, h, 5, '150, 120, 60', 0.2)
-    centerText(ctx, '指名手配', w / 2, 70, `800 78px ${GOTHIC}`, '#c01e14')
-    centerText(ctx, 'この人物を探しています', w / 2, 136, `700 26px ${GOTHIC}`, '#222')
-    cctvStill(ctx, 46, 168, w - 92, 300)
-    centerText(ctx, '防犯カメラの画像', w / 2, 484, `500 17px ${GOTHIC}`, '#555')
+    stains(ctx, w, h, 7, '150, 120, 60', 0.28)
+    centerText(ctx, 'お願い', w / 2, 92, `800 76px ${GOTHIC}`, '#b3241c')
     lines(
       ctx,
       [
-        '氏名・年齢　不詳',
-        '黒っぽい服装　身長170cm前後',
-        '夜間、駅とその周辺で',
-        '目撃されています',
+        '夜中に、鈴の音が',
+        '聞こえることがあります。',
+        '',
+        '音がしても、',
+        '窓をあけたり、',
+        '外をのぞいたり',
+        'しないでください。',
       ],
       52,
-      528,
-      34,
-      `700 23px ${GOTHIC}`,
-      '#222',
+      210,
+      56,
+      `700 32px ${GOTHIC}`,
+      '#26231f',
     )
-    ctx.fillStyle = '#1f3d7a'
-    ctx.fillRect(0, h - 74, w, 74)
-    centerText(ctx, '見かけた方は 110番 へ', w / 2, h - 37, `800 30px ${GOTHIC}`, '#ffffff')
+    centerText(ctx, '月見台三丁目 町内会', w / 2, h - 58, `600 26px ${GOTHIC}`, '#454139')
   })
 
 /**
- * 町内会の掲示板の板。緑のフェルトに、お知らせの紙が何枚か。右側は指名手配の紙を重ねて貼る場所
+ * 交番の前の、特殊詐欺に気をつけるポスター
+ */
+export const fraudPosterTexture = () =>
+  canvasTexture(512, 724, (ctx, w, h) => {
+    ctx.fillStyle = '#f2cf3a'
+    ctx.fillRect(0, 0, w, h)
+    ctx.fillStyle = '#1b1b1b'
+    ctx.fillRect(0, 0, w, 160)
+    centerText(ctx, 'ストップ!', w / 2, 52, `800 44px ${GOTHIC}`, '#f2cf3a')
+    centerText(ctx, '特殊詐欺', w / 2, 116, `800 62px ${GOTHIC}`, '#ffffff')
+    lines(
+      ctx,
+      ['電話で、お金の話が', '出たら、まず切って。', '', '家族か警察に', '相談してください。'],
+      56,
+      240,
+      60,
+      `800 34px ${GOTHIC}`,
+      '#1b1b1b',
+    )
+    ctx.fillStyle = '#1f3d7a'
+    ctx.fillRect(0, h - 92, w, 92)
+    centerText(ctx, '相談は #9110 へ', w / 2, h - 46, `800 36px ${GOTHIC}`, '#ffffff')
+  })
+
+/**
+ * 祠の由来の立て札。古い板に、墨で縦に書いてある。右の列から読む
+ */
+export const shrineSignTexture = () =>
+  canvasTexture(512, 800, (ctx, w, h) => {
+    ctx.fillStyle = '#7d6649'
+    ctx.fillRect(0, 0, w, h)
+    for (let i = 0; i < 70; i++) {
+      const x = Math.random() * w
+      const bend = () => (Math.random() - 0.5) * 30
+      ctx.strokeStyle = `rgba(50, 32, 18, ${0.05 + Math.random() * 0.14})`
+      ctx.lineWidth = 1 + Math.random() * 2.5
+      ctx.beginPath()
+      ctx.moveTo(x, 0)
+      ctx.bezierCurveTo(x + bend(), h * 0.3, x + bend(), h * 0.7, x + bend(), h)
+      ctx.stroke()
+    }
+    ctx.fillStyle = 'rgba(232, 220, 196, 0.62)'
+    ctx.fillRect(22, 22, w - 44, h - 44)
+    stains(ctx, w, h, 9, '40, 28, 14', 0.4)
+    speckle(ctx, w, h, 2500, ['rgba(40, 25, 10, 0.25)', 'rgba(255, 245, 220, 0.12)'], 2)
+    const columns = [
+      ['面無し様 由来', 52],
+      ['むかし この辺りで', 36],
+      ['顔をなくした人を まつる', 36],
+      ['鈴の音を たどって', 36],
+      ['なくした顔を 探しに来るという', 36],
+      ['夜は 鈴を鳴らさぬこと', 36],
+    ]
+    let x = w - 74
+    columns.forEach(([text, size], k) => {
+      ;[...text].forEach((ch, i) => {
+        centerText(ctx, ch, x, 74 + i * size * 1.06, `600 ${size}px ${MINCHO}`, '#1d150d')
+      })
+      x -= k === 0 ? 80 : 66
+    })
+  })
+
+/**
+ * 町内会の掲示板の板。緑のフェルトに、お知らせの紙が何枚か。右側はお願いの紙を重ねて貼る場所
  */
 export const communityBoardTexture = () =>
   canvasTexture(1024, 600, (ctx, w, h) => {

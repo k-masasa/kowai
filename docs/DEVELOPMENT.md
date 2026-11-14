@@ -30,12 +30,12 @@ $ npx prettier --check .
 | main.js     | 遊びの流れ。電車の動き、話の流れ、日数、難しさ、出来事、死に方 |
 | kit.js      | 箱・壁・床・管・屋根などを組む共通の部品と、歩ける区画         |
 | building.js | マンションとまわりの形 (最寄り駅までの道、家、駐輪場、掲示板)  |
-| town.js     | 会社のある町 (ロビー、駅までの通りと店、交番)                  |
+| town.js     | 会社のある町 (ロビー、駅までの通りと店、ビルの隙間の祠、交番)  |
 | station.js  | 駅 (改札、ホーム、線路)。乗る駅と最寄り駅で使い回す            |
 | train.js    | 2両の電車と、走っている間に窓の外を流れる景色                  |
 | lights.js   | 照明。近い照明にだけ、本物の光を割り当てる                     |
 | people.js   | 階段ですれ違う住人と、おかしな人                               |
-| figure.js   | 顔の無い人                                                     |
+| figure.js   | 顔の無い人 (面無し様)。上の踊り場で探している人も、これで作る  |
 | sound.js    | 効果音。Web Audio でその場で作る                               |
 | textures.js | 壁や看板などの絵。canvas で描く                                |
 
@@ -56,7 +56,7 @@ $ npx prettier --check .
 | `lamp()`                                          | うしろの街灯の下に人を立たせる                    |
 | `lift(floor)`                                     | その階にエレベーターを着ける                      |
 | `pick(nx, ny)`                                    | 画面の点に何が写っているかを返す                  |
-| `S` / `building` / `figure` / `person` / `crouch` | 遊びの状態と、建物・人の中身                      |
+| `S` / `building` / `figure` / `person` / `seeker` | 遊びの状態と、建物・人の中身                      |
 | `train` / `town` / `workStation` / `homeStation`  | 電車と、町と、2つの駅                             |
 | `renderer` / `scene` / `camera`                   | 描く回数や時間を測る時に使う                      |
 

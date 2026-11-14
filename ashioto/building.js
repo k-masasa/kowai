@@ -53,7 +53,7 @@ import {
   tileTexture,
   vendingAdTexture,
   vendingTexture,
-  wantedPosterTexture,
+  suzuNoticeTexture,
   waterStainTexture,
   wallTexture,
   wireGlassTexture,
@@ -95,9 +95,15 @@ export const floorY = (f) => (f - 1) * FH
 export const doorX = (i) => HX1 + UNIT * i + 0.75
 
 /**
- * f 階の上の中間の踊り場の、北西の隅。しゃがむ人を置くのに使う
+ * f 階の上の中間の踊り場の、西の列の側。人を立たせるのに使う
  */
-export const landingCorner = (f) => new THREE.Vector3(SX0 + 0.32, floorY(f) + HALF, BACK_Z + 0.32)
+export const landingSpot = (f) => new THREE.Vector3(0.95, floorY(f) + HALF, -4.35)
+
+/**
+ * f 階から上がる階段 (東の列) を、上がりきった所。f 階の踊り場から見上げると、正面に見える
+ */
+export const flightTop = (f) =>
+  new THREE.Vector3((DIV1 + SX1) / 2, floorY(f) + HALF, (BACK_Z + MID_Z) / 2)
 
 /**
  * f + 1 階の踊り場から f 階の踊り場まで、階段を下りる道すじ。人を歩かせるのに使う
@@ -213,7 +219,7 @@ export const buildBuilding = (scene) => {
     boardFrame: new THREE.MeshStandardMaterial({ color: 0x2d4636, roughness: 0.6, metalness: 0.2 }),
     board: new THREE.MeshStandardMaterial({ map: communityBoardTexture(), roughness: 0.95 }),
     boardHeader: new THREE.MeshStandardMaterial({ map: boardHeaderTexture(), roughness: 0.6 }),
-    wanted: new THREE.MeshStandardMaterial({ map: wantedPosterTexture(), roughness: 0.75 }),
+    notice: new THREE.MeshStandardMaterial({ map: suzuNoticeTexture(), roughness: 0.8 }),
     liftWall: new THREE.MeshStandardMaterial({ color: 0x9da2a6, roughness: 0.35, metalness: 0.6 }),
     streak: new THREE.MeshStandardMaterial({
       map: streakTexture(),
@@ -602,7 +608,7 @@ export const buildBuilding = (scene) => {
     b.add(new THREE.PlaneGeometry(0.42, 0.84), label, at(x + 0.21, 0.515, 0.902))
   })
 
-  // 町内会の掲示板。駐輪場の前の道ばたに立っていて、お知らせにまぎれて指名手配の紙が貼ってある
+  // 町内会の掲示板。駐輪場の前の道ばたに立っていて、お知らせにまぎれて、鈴の音のお願いの紙が貼ってある
   const nb0 = -6.45
   const nb1 = -4.85
   const nbz = 0.82
@@ -621,7 +627,7 @@ export const buildBuilding = (scene) => {
   )
   b.add(
     new THREE.PlaneGeometry(0.33, 0.47),
-    mat.wanted,
+    mat.notice,
     at(nb1 - 0.3, 1.36, nbz + 0.076, 0, 0, -0.025),
   )
 

@@ -417,6 +417,34 @@ export const createSound = () => {
   }
 
   /**
+   * 鈴の音。中の玉が転がって、高く澄んだ音が何回か重なる。金属の音なので、倍音は整数倍からずらす
+   */
+  const suzu = (vol = 0.1) => {
+    if (!ctx) return
+    const t = ctx.currentTime
+    const hits = 2 + Math.floor(Math.random() * 3)
+    for (let k = 0; k < hits; k++) {
+      const at = t + k * (0.035 + Math.random() * 0.05)
+      const base = 2300 + Math.random() * 500
+      const v = vol * (k === 0 ? 1 : 0.4 + Math.random() * 0.4)
+      ;[1, 2.62, 4.1].forEach((ratio, i) => {
+        const osc = ctx.createOscillator()
+        osc.type = 'sine'
+        osc.frequency.value = base * ratio
+        const gain = ctx.createGain()
+        const len = 0.55 / (i + 1)
+        gain.gain.setValueAtTime(0.0001, at)
+        gain.gain.exponentialRampToValueAtTime(v / (i + 1.5), at + 0.003)
+        gain.gain.exponentialRampToValueAtTime(0.0001, at + len)
+        osc.connect(gain).connect(out)
+        osc.start(at)
+        osc.stop(at + len + 0.02)
+      })
+      burst(at, { vol: v * 0.3, freq: 6000, q: 2, len: 0.02 })
+    }
+  }
+
+  /**
    * 電車の走る音の大きさ (0 から 1)
    */
   const setTrain = (level) => {
@@ -478,6 +506,7 @@ export const createSound = () => {
     setDrone,
     joint,
     bell,
+    suzu,
     setTrain,
     doorHiss,
     chirp,

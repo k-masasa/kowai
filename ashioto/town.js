@@ -1,21 +1,22 @@
 import * as THREE from 'three'
-import { at, box, flat, makeBuilder, tiled, wallX, wallZ, zone } from './kit.js'
+import { at, box, flat, makeBuilder, tiled, tube, wallX, wallZ, zone } from './kit.js'
 import {
   asphaltTexture,
   ceilingTexture,
   concreteTexture,
   directoryTexture,
+  fraudPosterTexture,
   gateTopTexture,
   kobanSignTexture,
   paverTexture,
   shopSignTexture,
+  shrineSignTexture,
   shutterTexture,
   signTexture,
   stoneTileTexture,
   storeInsideTexture,
   walkSignalTexture,
   wallTexture,
-  wantedPosterTexture,
 } from './textures.js'
 
 // 会社のある町。会社のビルのロビーから出て、通りを東へ歩くと、交番と中央町駅がある。
@@ -71,7 +72,16 @@ export const buildTown = (scene, origin, shared) => {
     store: new THREE.MeshBasicMaterial({ map: storeInsideTexture() }),
     directory: new THREE.MeshBasicMaterial({ map: directoryTexture(), color: 0xcccccc }),
     koban: new THREE.MeshBasicMaterial({ map: kobanSignTexture() }),
-    wanted: new THREE.MeshStandardMaterial({ map: wantedPosterTexture(), roughness: 0.75 }),
+    fraud: new THREE.MeshStandardMaterial({ map: fraudPosterTexture(), roughness: 0.75 }),
+    // 祠。古い木、緑青の屋根、色のあせた朱の鳥居、鈴の緒、落ちている鈴
+    oldWood: new THREE.MeshStandardMaterial({ color: 0x4a3b2c, roughness: 0.9 }),
+    copper: new THREE.MeshStandardMaterial({ color: 0x4f6f60, roughness: 0.75, metalness: 0.2 }),
+    vermilion: new THREE.MeshStandardMaterial({ color: 0xa3442e, roughness: 0.85 }),
+    rope: new THREE.MeshStandardMaterial({ color: 0x8e3328, roughness: 0.95 }),
+    gold: new THREE.MeshStandardMaterial({ color: 0xc9a14a, roughness: 0.28, metalness: 0.9 }),
+    sakaki: new THREE.MeshStandardMaterial({ color: 0x24432a, roughness: 0.8 }),
+    shrineSign: new THREE.MeshStandardMaterial({ map: shrineSignTexture(), roughness: 0.9 }),
+    lamp: new THREE.MeshBasicMaterial({ color: 0xffc27a }),
     walkRed: new THREE.MeshBasicMaterial({ map: walkSignalTexture(false) }),
     walkGo: new THREE.MeshBasicMaterial({ map: walkSignalTexture(true) }),
   }
@@ -310,9 +320,88 @@ export const buildTown = (scene, origin, shared) => {
   sign(shopSignTexture('ラーメン 龍', '#7a1d14', '#ffe9b0'), 5.2, 0.62, X(28.5), 3.1, Z(2.93))
   b.add(new THREE.SphereGeometry(0.26, 14, 12), mat.lantern, at(X(30.7), 2.35, Z(3.25)))
   fixture(X(30.7), 2.1, Z(3.8), 0xff8a5a, 2.5, 5, null, true)
-  closedShop(31.8, 38.4, '中央町不動産', '#e6e2d6', '#1f3d7a')
+  closedShop(31.8, 36.2, '中央町不動産', '#e6e2d6', '#1f3d7a')
   closedShop(38.8, 46, 'クリーニング', '#2e6b4f', '#ffffff')
   closedShop(46.4, 54.6, '喫茶 白樺', '#3b2a20', '#e8d4b0')
+
+  // ---------- ビルの隙間の祠 ----------
+  // 不動産屋とクリーニング屋のあいだ (x = 36.2 から 38.8)。奥はブロック塀。
+  // 石の台に古い祠が載り、前に小さな鳥居と由来の立て札。鈴の緒だけが残り、鈴は歩道に落ちている
+  const sx = 37.5
+  box(b, mat.facade, X(36.2), X(38.8), 0, 7, Z(-6), Z(-1.3))
+  box(b, mat.concrete, X(36.2), X(38.8), 0, 1.9, Z(-1.32), Z(-1.2))
+  flat(b, mat.concrete, 0.004, X(36.2), X(38.8), Z(-1.2), Z(2.95), 1)
+  box(b, mat.concrete, X(sx - 0.45), X(sx + 0.45), 0, 0.55, Z(-1.05), Z(-0.35))
+  box(b, mat.oldWood, X(sx - 0.32), X(sx + 0.32), 0.55, 1.08, Z(-0.95), Z(-0.45))
+  box(b, mat.oldWood, X(sx - 0.32), X(sx + 0.32), 1.08, 1.3, Z(-0.85), Z(-0.55))
+  b.add(new THREE.PlaneGeometry(0.46, 0.4), mat.dark, at(X(sx), 0.8, Z(-0.448)))
+  box(b, mat.oldWood, X(sx - 0.01), X(sx + 0.01), 0.6, 1.02, Z(-0.45), Z(-0.43))
+  // 屋根。棟から前後へ、0.6 rad かたむけた板を2枚
+  ;[-1, 1].forEach((e) => {
+    b.add(
+      new THREE.BoxGeometry(0.92, 0.035, 0.5),
+      mat.copper,
+      at(X(sx), 1.42 - 0.25 * Math.sin(0.6), Z(-0.7 + e * 0.25 * Math.cos(0.6)), e * 0.6),
+    )
+  })
+  box(b, mat.oldWood, X(sx - 0.48), X(sx + 0.48), 1.4, 1.47, Z(-0.73), Z(-0.67))
+  // 鈴の緒。先の鈴が無い
+  tube(
+    b,
+    mat.rope,
+    new THREE.Vector3(X(sx), 1.17, Z(-0.36)),
+    new THREE.Vector3(X(sx), 0.7, Z(-0.33)),
+    0.013,
+  )
+  // お神酒と榊
+  ;[-0.3, 0.3].forEach((d) => {
+    b.add(
+      new THREE.CylinderGeometry(0.03, 0.035, 0.12, 12),
+      mat.white,
+      at(X(sx + d), 0.61, Z(-0.3)),
+    )
+    b.add(
+      new THREE.CylinderGeometry(0.035, 0.03, 0.1, 12),
+      mat.white,
+      at(X(sx + d * 1.3), 0.6, Z(-0.85)),
+    )
+    b.add(new THREE.SphereGeometry(0.08, 10, 8), mat.sakaki, at(X(sx + d * 1.3), 0.72, Z(-0.85)))
+  })
+  // 鳥居
+  ;[-0.6, 0.6].forEach((d) => {
+    b.add(
+      new THREE.CylinderGeometry(0.045, 0.05, 1.7, 12),
+      mat.vermilion,
+      at(X(sx + d), 0.85, Z(1.2)),
+    )
+  })
+  box(b, mat.dark, X(sx - 0.85), X(sx + 0.85), 1.7, 1.78, Z(1.14), Z(1.26))
+  box(b, mat.vermilion, X(sx - 0.76), X(sx + 0.76), 1.63, 1.7, Z(1.15), Z(1.25))
+  box(b, mat.vermilion, X(sx - 0.7), X(sx + 0.7), 1.42, 1.48, Z(1.17), Z(1.23))
+  box(b, mat.vermilion, X(sx - 0.03), X(sx + 0.03), 1.48, 1.63, Z(1.17), Z(1.23))
+  // 由来の立て札。小さな屋根つき
+  box(b, mat.oldWood, X(36.42), X(36.48), 0, 1.55, Z(1.42), Z(1.48))
+  b.add(new THREE.PlaneGeometry(0.42, 0.66), mat.shrineSign, at(X(36.45), 1.15, Z(1.49)))
+  box(b, mat.oldWood, X(36.2), X(36.7), 1.5, 1.53, Z(1.36), Z(1.62))
+  // 右の壁の、小さな明かり
+  box(b, mat.steel, X(38.6), X(38.8), 1.9, 1.94, Z(0.36), Z(0.44))
+  const shrineLamp = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 10), mat.lamp.clone())
+  shrineLamp.position.set(X(38.58), 1.86, Z(0.4))
+  root.add(shrineLamp)
+  fixture(X(38.4), 1.75, Z(0.4), 0xffb070, 1.2, 4.5, shrineLamp, true)
+  // 歩道に落ちている鈴。赤い紐が少し付いている
+  const bell = new THREE.Group()
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.032, 16, 12), mat.gold)
+  ball.position.y = 0.032
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.01, 0.003, 6, 12), mat.gold)
+  ring.position.set(0.03, 0.06, 0)
+  ring.rotation.z = -0.9
+  const cord = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.006, 0.01), mat.rope)
+  cord.position.set(0.1, 0.004, 0.02)
+  cord.rotation.y = 0.5
+  bell.add(ball, ring, cord)
+  bell.position.set(X(sx), 0.003, Z(4.25))
+  root.add(bell)
 
   // ---------- 交番 ----------
   // 白い壁の小さな建物。入口のガラス戸のところだけ奥へへこませ、その奥に明るい部屋が見える
@@ -335,9 +424,9 @@ export const buildTown = (scene, origin, shared) => {
     0.8,
     Z(2.7),
   )
-  // 交番の前の掲示板。指名手配の紙と、交通安全のポスター
+  // 交番の前の掲示板。特殊詐欺と、交通安全のポスター
   box(b, mat.wood, X(55.4), X(57.6), 0.95, 2.2, Z(2.9), Z(2.96))
-  b.add(new THREE.PlaneGeometry(0.62, 0.88), mat.wanted, at(X(56.05), 1.58, Z(2.965)))
+  b.add(new THREE.PlaneGeometry(0.62, 0.88), mat.fraud, at(X(56.05), 1.58, Z(2.965)))
   sign(
     signTexture(['交通安全', '', '横断歩道は', '手をあげて', 'わたろう'], 256, 340),
     0.56,
@@ -349,13 +438,14 @@ export const buildTown = (scene, origin, shared) => {
 
   b.build(root)
 
-  // 区画。ロビー (ゲートの奥と手前、ゲートの通路)、ドア、北の歩道
+  // 区画。ロビー (ゲートの奥と手前、ゲートの通路)、ドア、北の歩道、祠の鳥居の前
   const zones = [
     zone('@OB', X(-7.6), X(7.6), Z(-9.6), Z(-3.9), () => 0),
     ...gateX.slice(0, 3).map((x) => zone('@OG', X(x + 0.2), X(x + 1.0), Z(-4.2), Z(-2.2), () => 0)),
     zone('@OL', X(-7.6), X(7.6), Z(-2.4), Z(2.6), () => 0),
     zone('@OD', X(-1.0), X(1.0), Z(2.3), Z(3.9), () => 0),
     zone('@CS', X(-35), X(95), Z(3.5), Z(6.2), () => 0),
+    zone('@CJ', X(36.4), X(38.6), Z(1.75), Z(3.6), () => 0),
   ]
   shared.zones.push(...zones)
 
@@ -368,6 +458,8 @@ export const buildTown = (scene, origin, shared) => {
     // ロビーのエレベーターの前。ここから始める
     start: new THREE.Vector3(X(-2.4), 0, Z(-8.6)),
     door: new THREE.Vector3(X(0), 0, Z(3)),
+    // 歩道に落ちている鈴と、その場所
+    shrine: { bell, at: bell.position.clone() },
     stationOrigin: [X(70), Z(3)],
   }
 }

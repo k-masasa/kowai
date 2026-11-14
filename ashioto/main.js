@@ -8,8 +8,9 @@ import {
   buildBuilding,
   descentPath,
   doorX,
+  flightTop,
   floorY,
-  landingCorner,
+  landingSpot,
 } from './building.js'
 import { createLightPool } from './lights.js'
 import { createFigure } from './figure.js'
@@ -156,7 +157,14 @@ const dayState = () => ({
   hinted: {},
   lookBack: 0,
   stillFor: 0,
-  crouchShown: false,
+  // 祠の前で拾った鈴を持っているか。落ちている鈴が、近くでひとりでに鳴ったか
+  bell: false,
+  bellCalled: false,
+  // 上の踊り場で探している人。出したか、首を振る時間、鈴を聞きつけて振り向いている残りの秒数、消えるまでの秒数
+  seekerShown: false,
+  seekerT: 0,
+  heardFor: 0,
+  seekerGone: 0,
   vendTrap: false,
   vendFor: 0,
   walker: null,
@@ -310,12 +318,10 @@ scene.add(figure.group)
 const person = createPerson()
 person.group.visible = false
 scene.add(person.group)
-// 踊り場の隅にしゃがんでいる人。顔の無い黒い服で、背を丸めて小さく見せる
-const crouch = createPerson()
-crouch.dress(0, true)
-crouch.group.scale.set(1, 0.6, 1)
-crouch.group.visible = false
-scene.add(crouch.group)
+// 上の踊り場で、鈴の音を探している人。電車やホームに出てくるのと同じ、顔の無い黒いコートの人
+const seeker = createFigure()
+seeker.group.visible = false
+scene.add(seeker.group)
 const sound = createSound()
 const homeDoor = building.doors.find((d) => d.home)
 const eye = new THREE.Vector3()
@@ -522,7 +528,7 @@ const resetWorld = () => {
   building.homeGlass.mesh.material = building.homeGlass.normal
   placeStart(S.from)
   closeLift()
-  crouch.group.visible = false
+  seeker.group.visible = false
   if (S.level.events) {
     S.odd = planOddities()
     applyOddities()
@@ -542,7 +548,10 @@ const placeStart = (from) => {
   train.fixtures.forEach((f) => {
     f.on = false
   })
+  // マンションの前からやり直す時は、鈴はもう持っている
+  town.shrine.bell.visible = from !== 'home'
   if (from === 'home') {
+    S.bell = true
     S.pos.set(-8, 0, 2.0)
     S.yaw = -1.33
     S.tag = 'S'
@@ -754,7 +763,7 @@ const updateTrip = (dt) => {
 
 /**
  * 階段の異変を、ばらばらの階に割り当てる。赤い表示の階 (振り返ると死ぬ)、明かりの消えた区間 (止まると死ぬ)、
- * しゃがむ人 (走ると死ぬ) から、1日目は2つ、2日目からは3つ。ほかに、表示の消えた階が1つ
+ * 上の踊り場で探す人 (走ると死ぬ) から、1日目は2つ、2日目からは3つ。ほかに、表示の消えた階が1つ
  */
 const planOddities = () => {
   const taken = new Set(S.repeatAt.flatMap((f) => [f, f + 1]))
@@ -766,7 +775,7 @@ const planOddities = () => {
     ;[f - 1, f, f + 1].forEach((n) => taken.add(n))
     return f
   }
-  const kinds = ['red', 'dark', 'crouch'].sort(() => Math.random() - 0.5)
+  const kinds = ['red', 'dark', 'search'].sort(() => Math.random() - 0.5)
   const plan = {}
   kinds.slice(0, S.day >= 2 ? 3 : 2).forEach((kind) => {
     plan[kind] = pick()
@@ -799,32 +808,54 @@ const oddDeath = (line) => {
 }
 
 /**
- * 踊り場の隅にしゃがむ人。近くで走ると、立ち上がって襲ってくる。通り過ぎたら消える
+ * 上の踊り場で、顔の無い人が首を振って、鈴の音を探している。歩けば鈴はかすかで、たまに振り向くだけ。
+ * 走って鈴を大きく鳴らすと、下りてくる。近くまで上がると、明かりのちらつきの間に消える
  */
-const updateCrouch = (f) => {
-  const cf = S.odd.crouch
-  if (!cf) return
-  const g = crouch.group
+const updateSeeker = (f, dt) => {
+  const sf = S.odd.search
+  if (!sf) return
+  const g = seeker.group
   const here = f || Math.floor((S.feet + 0.5) / FH) + 1
-  if (!S.crouchShown && here >= cf - 1 && here <= cf) {
-    S.crouchShown = true
-    g.position.copy(landingCorner(cf))
-    g.rotation.y = -Math.PI * 0.75
+  if (!S.seekerShown && here >= sf - 1 && here <= sf) {
+    S.seekerShown = true
+    g.position.copy(flightTop(sf))
+    g.rotation.y = -Math.PI / 2
+    seeker.randomPose(0)
     g.visible = true
   }
   if (!g.visible) return
-  const d = Math.hypot(S.pos.x - g.position.x, S.pos.z - g.position.z)
-  const dy = Math.abs(S.feet - g.position.y)
-  if (!S.hinted.crouch && dy < 1.6 && d < 5) {
-    S.hinted.crouch = true
-    whisper('しずかに。')
-  }
-  if (S.running && S.walking && dy < 1.6 && d < 4) {
-    g.visible = false
-    oddDeath('走る音が、聞こえました。')
+  if (S.seekerGone > 0) {
+    S.seekerGone -= dt
+    if (S.seekerGone <= 0) g.visible = false
     return
   }
-  if (S.feet > floorY(cf + 1) + 0.5) g.visible = false
+  const d = flat(S.pos, g.position)
+  const dy = Math.abs(S.feet - g.position.y)
+  // ふだんは首を振って探す。鈴を聞きつけた後は、しばらくこちらを向く
+  S.seekerT += dt
+  S.heardFor = Math.max(0, S.heardFor - dt)
+  const heard = S.heardFor > 0
+  const look = heard
+    ? Math.atan2(S.pos.x - g.position.x, S.pos.z - g.position.z)
+    : -Math.PI / 2 + Math.sin(S.seekerT * 0.6) * 1.2
+  g.rotation.y = lerpAngle(g.rotation.y, look, 1 - Math.exp(-(heard ? 4 : 1.5) * dt))
+  if (!S.hinted.search && dy < 2.2 && d < 6) {
+    S.hinted.search = true
+    whisper('しずかに。')
+    sound.whisper()
+  }
+  if (S.running && S.walking && dy < 2.4 && d < 7) {
+    g.visible = false
+    oddDeath('鈴の音を、聞かれました。')
+    return
+  }
+  if (d < 2.3 && dy < 1.0) {
+    const lamp = building.fixtures.find((l) => l.stair === sf + 0.5)
+    if (lamp) lamp.stutter = 0.5
+    sound.flicker()
+    S.seekerGone = 0.12
+  }
+  if (S.feet > floorY(sf + 1) + 0.5) g.visible = false
 }
 
 /**
@@ -867,7 +898,7 @@ const updateStairOddities = (dt) => {
   } else {
     S.stillFor = 0
   }
-  updateCrouch(f)
+  updateSeeker(f, dt)
 }
 
 /**
@@ -992,7 +1023,7 @@ const pickRepeats = (n) => {
 const showAhead = (f) => {
   S.ahead = true
   S.aheadFloor = f
-  figure.group.position.set(0.95, floorY(f) + FH / 2, -4.35)
+  figure.group.position.copy(landingSpot(f))
   figure.randomPose(0)
   figure.group.rotation.y = Math.PI
   figure.group.visible = true
@@ -1136,6 +1167,48 @@ const footstep = () => {
   sound.step(S.running ? 0.75 : 0.5)
   const echo = echoVolume()
   if (echo > 0) sound.step(echo, { muffle: 0.65, when: 0.31 + Math.random() * 0.03 })
+  ringBell()
+}
+
+/**
+ * 拾った鈴が、ポケットの中で鳴る。歩くと2歩に1度くらいかすかに、走ると毎歩大きく。
+ * 上で探している人には、かすかな音でもたまに聞こえて、振り向く
+ */
+const ringBell = () => {
+  if (!S.bell) return
+  if (!S.running && Math.random() < 0.5) return
+  sound.suzu(S.running ? 0.16 : 0.03)
+  const near = seeker.group.visible && flat(S.pos, seeker.group.position) < 8
+  if (near && Math.random() < 0.35) S.heardFor = 1.4
+}
+
+/**
+ * 祠の前に落ちている鈴。近づくと、ひとりでに小さく鳴る。足もとまで来たら拾う。
+ * 拾わずに通り過ぎても、いつの間にかポケットに入っている
+ */
+const updateShrine = () => {
+  if (S.bell || !S.tag.startsWith('@C')) return
+  const at = town.shrine.at
+  const d = flat(S.pos, at)
+  if (!S.bellCalled && d < 4.5) {
+    S.bellCalled = true
+    sound.suzu(0.12)
+  }
+  if (d < 1.1) {
+    pickBell('鈴を、拾った。')
+    return
+  }
+  if (S.pos.x > at.x + 5) pickBell('ポケットの中で、鈴が鳴った。')
+}
+
+/**
+ * 鈴を持つ。落ちていた鈴は消す
+ */
+const pickBell = (line) => {
+  S.bell = true
+  town.shrine.bell.visible = false
+  sound.suzu(0.3)
+  whisper(line, 2800)
 }
 
 /**
@@ -2144,6 +2217,7 @@ const updateRattle = (dt) => {
 const updatePlay = (dt) => {
   updateTrip(dt)
   updateTown(dt)
+  updateShrine()
   updateStory(dt)
   move(dt)
   if (S.mode !== 'play') return
@@ -2364,7 +2438,7 @@ if (import.meta.env.DEV) {
     renderer,
     scene,
     camera,
-    crouch,
+    seeker,
     homeStation,
     train,
     town,
