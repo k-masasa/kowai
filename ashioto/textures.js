@@ -1389,14 +1389,19 @@ export const stationBoardTexture = (o) =>
     ctx.textBaseline = 'middle'
     ctx.textAlign = 'left'
     ctx.fillText(`← ${o.prev[0]}`, 24, 288)
-    ctx.textAlign = 'right'
-    ctx.fillText(`${o.next[0]} →`, w - 24, 288)
+    // 終点の駅は、片側だけ
+    if (o.next) {
+      ctx.textAlign = 'right'
+      ctx.fillText(`${o.next[0]} →`, w - 24, 288)
+    }
     ctx.font = `500 22px ${GOTHIC}`
     ctx.fillStyle = '#333'
     ctx.textAlign = 'left'
     ctx.fillText(o.prev[1], 48, 334)
-    ctx.textAlign = 'right'
-    ctx.fillText(o.next[1], w - 48, 334)
+    if (o.next) {
+      ctx.textAlign = 'right'
+      ctx.fillText(o.next[1], w - 48, 334)
+    }
     stains(ctx, w, h, 4, '80, 70, 50', 0.12)
   })
 

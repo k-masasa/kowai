@@ -659,13 +659,18 @@ export const buildTrain = (scene, shared) => {
   const lightBase = mat.light.color.clone()
 
   /**
-   * 車内の明かりを点ける / 消す。天井の明かりの列と、本物の光の両方
+   * 車内の明かりを点ける / 消す。天井の明かりの列と、本物の光の両方。
+   * 車内の映り込みは明るい時に撮ったものなので、消している間は弱くする (そのままだと、消しても明るく見える)
    */
   const setLit = (on) => {
     mat.light.color.copy(lightBase).multiplyScalar(on ? 1 : 0.04)
     fixtures.forEach((f) => {
       f.on = on
     })
+    shine.forEach(([m, k]) => {
+      m.envMapIntensity = on ? k : k * 0.06
+    })
+    mat.glass.reflectivity = on ? 0.5 : 0.1
   }
 
   return { root, place, setOpen, display, fixtures, capture, lightOutside, setLit }

@@ -257,7 +257,8 @@ moon.position.set(-20, 40, 30)
 scene.add(moon)
 
 const building = buildBuilding(scene)
-// 最寄りの月見台駅。マンションの前の道の西の端にある
+// 最寄りの月見台駅。マンションの前の道の西の端にある。線路はここで終わる (終点)。
+// 乗ってきたのが終電なので、次の電車は朝まで無い
 const homeStation = buildStation(
   scene,
   {
@@ -265,20 +266,17 @@ const homeStation = buildStation(
     name: '月見台',
     kana: 'つきみだい',
     roman: 'Tsukimidai',
-    prev: ['ちゅうおうちょう', '中央町'],
-    next: ['さくらがおか', '桜丘'],
+    prev: ['にしはら', '西原'],
+    next: null,
     color: '#2e8b57',
     fares: [
       ['中央町', '220'],
       ['港北', '190'],
       ['西原', '160'],
       ['月見台', ''],
-      ['桜丘', '140'],
     ],
-    departures: [
-      ['普通', '桜丘', '0:05'],
-      ['普通', '中央町', '0:12'],
-    ],
+    departures: [['普通', '中央町', '5:02']],
+    note: '本日の運転は、終了しました',
     tag: '@H',
   },
   building,
@@ -307,10 +305,8 @@ const workStation = buildStation(
       ['西原', '190'],
       ['月見台', '220'],
     ],
-    departures: [
-      ['普通', '月見台', '23:41'],
-      ['普通', '桜丘', '23:52'],
-    ],
+    departures: [['普通', '月見台', '23:41']],
+    note: 'この電車が、最終です',
     tag: '@C',
   },
   building,
@@ -680,7 +676,7 @@ const trainExitPath = (stop) => {
 }
 
 // 中央町から乗っている乗客。[両 (0 か 1), 両の真ん中からの x, 側, 降りる駅 (LEGS の番号)]。
-// 降りる駅が null の1人は、終点でも降りずに寝ている
+// 終点の月見台 (2) まで乗っているのは、寝ている1人だけ。終点では、こちらとその人の2人だけが降りる
 const SEATED = [
   [0, -5.9, 1, 0],
   [0, -4.2, -1, 0],
@@ -691,7 +687,7 @@ const SEATED = [
   [0, -3.6, 1, 1],
   [0, 1.0, 1, 1],
   [0, 4.6, -1, 1],
-  [0, 6.3, 1, null],
+  [0, 6.3, 1, 2],
   [1, -4.8, 1, 0],
   [1, 2.2, -1, 0],
   [1, -1.3, 1, 1],
@@ -721,7 +717,7 @@ const placeTownPeople = () => {
  * 電車が中央町に来る時に、乗客を座らせる。前の電車に乗らなかった時は、もう乗っているので何もしない
  */
 const seatPassengers = () => {
-  if (crowd.people.some((m) => m.used && (m.tag === 'rider' || m.tag === 'sleeper'))) return
+  if (crowd.people.some((m) => m.used && (m.tag === 'rider' || m.tag === 'last'))) return
   SEATED.forEach(([c, x, s, leave], k) => {
     const m = crowd.take('rider')
     if (!m) return
@@ -729,9 +725,10 @@ const seatPassengers = () => {
     crowd.put(m, train.root, cx + x, -0.37, s * 1.12, s > 0 ? Math.PI : 0, 'sit', k * 7 + 3)
     m.leaveAt = leave
     m.car = cx
-    // 何人かは、うつむいて眠っている
-    if (leave === null || k % 4 === 1) m.p.head.rotation.x = 0.55
-    if (leave === null) m.tag = 'sleeper'
+    // 何人かは、うつむいて眠っている。終点まで乗る人も
+    const last = leave === LEGS.length - 1
+    if (last || k % 4 === 1) m.p.head.rotation.x = 0.55
+    if (last) m.tag = 'last'
     // 座っている間は動かないので、部品をまとめて軽くする
     m.p.bake()
   })
@@ -751,7 +748,7 @@ const boardWaiters = () => {
         done: () => {
           train.root.attach(m.p.group)
           m.tag = 'rider'
-          m.leaveAt = k === 0 ? 1 : 2
+          m.leaveAt = k === 1 ? 0 : 1
           m.car = m.door - w.x > CAR / 2 ? CAR + 0.6 : 0
           m.p.group.rotation.y = k % 2 ? 0 : Math.PI
           m.p.bake()
@@ -796,32 +793,62 @@ const leavePassengers = (leg) => {
 }
 
 /**
- * 終点の月見台で、残っていた乗客を降ろして、改札の方へ歩かせる。寝ている1人は降りない
+ * 終点の月見台で、寝ていた1人が起きて降りる。ホームから改札を抜けて駅を出ると、
+ * マンションとは反対の西へ歩いていく (その先は updateLastPassenger)
  */
 const leaveAtTerminal = (stop) => {
   crowd.people
-    .filter((m) => m.used && m.tag === 'rider')
+    .filter((m) => m.used && (m.tag === 'rider' || m.tag === 'last'))
     .forEach((m, k) => {
       const { points } = riderExit(m)
+      m.p.head.rotation.x = 0
       m.tag = 'leave'
       crowd.walk(m, points, {
-        speed: 1.25,
-        wait: 0.4 + k * 0.6,
+        speed: 1.3,
+        wait: 0.5 + k * 0.6,
         done: () => {
           scene.attach(m.p.group)
-          m.tag = 'gone'
-          const p = m.p.group.position
+          m.tag = 'away'
+          // 改札の4つ目の通路を抜けて、駅の入口から歩道へ出て、西へ
+          const gx = stop.x + 0.6
+          const ez = stop.z + 15.5
           crowd.walk(
             m,
-            [v3(p.x, 0, stop.z + 3.8), v3(stop.x, 0, stop.z + 5.8), v3(stop.x, 0, stop.z + 9)],
-            {
-              speed: 1.2,
-              done: () => crowd.release(m),
-            },
+            [
+              v3(gx, 0, stop.z + 4.6),
+              v3(gx, 0, stop.z + 8.6),
+              v3(gx, 0, stop.z + 12),
+              v3(stop.x, 0, ez + 0.6),
+              v3(stop.x - 4, 0, ez + 1.4),
+              v3(stop.x - 40, 0, ez + 1.6),
+            ],
+            { speed: 1.2, done: () => crowd.release(m) },
           )
         },
       })
     })
+}
+
+const lastHead = new THREE.Vector3()
+
+/**
+ * 駅を出て西へ歩いていく、終点で一緒に降りた人。駅から離れたところで、見ていると消える。
+ * 消える時に、ポケットの鈴がひとりでに鳴る。見ていなければ、暗がりの先で消える
+ */
+const updateLastPassenger = () => {
+  const m = crowd.people.find((x) => x.used && x.tag === 'away')
+  if (!m) return
+  const p = m.p.group.position
+  const past = homeStation.stop.x - p.x
+  if (past < 12) return
+  lastHead.copy(p)
+  lastHead.y += 1.5
+  updateFrustum()
+  sphere.center.copy(lastHead)
+  const seen = frustum.intersectsSphere(sphere) && lastHead.distanceTo(eye) < 30
+  if (!seen && past < 20) return
+  crowd.release(m)
+  if (seen) sound.suzu(0.07)
 }
 
 /**
@@ -830,7 +857,7 @@ const leaveAtTerminal = (stop) => {
 const blankRiders = (on) => {
   const base = train.root.position
   crowd.people
-    .filter((m) => m.used && (m.tag === 'rider' || m.tag === 'sleeper'))
+    .filter((m) => m.used && (m.tag === 'rider' || m.tag === 'last'))
     .forEach((m) => {
       m.p.blank(on)
       if (!on) {
@@ -904,7 +931,8 @@ const announceNext = (k) => {
 
 /**
  * 電車の1フレーム分。中央町のホームで待つ -> 電車が来る -> 乗るとドアが閉まって発車 -> 走る ->
- * 港北、西原に止まり、乗客が降りていく -> 終点の月見台に止まってドアが開く -> 降りたら閉まって走り去る
+ * 港北、西原に止まり、乗客が降りていく -> 終点の月見台に止まってドアが開き、残っていた1人と一緒に降りる ->
+ * 終点なので先へは行かず、ドアを閉めて車内の明かりを消す
  */
 const updateTrip = (dt) => {
   const T = S.trip
@@ -1111,6 +1139,9 @@ const updateTrip = (dt) => {
     if (k >= 1) {
       T.phase = 'open'
       T.t = 0
+      // 途中の駅で使った印を戻す。戻さないと、放送も自動で降ろすのも動かない
+      T.said = false
+      T.left = 0
       sound.doorHiss()
       train.display.draw('月見台', 'Tsukimidai', '')
     }
@@ -1127,31 +1158,26 @@ const updateTrip = (dt) => {
       T.left += dt
       S.checkpoint = 'home'
     }
-    if (T.left > 3) {
+    if (T.left > 3 && crowd.walking('leave') === 0) {
       T.phase = 'close'
       T.t = 0
       sound.doorHiss()
-      const sleeper = crowd.people.find((m) => m.used && m.tag === 'sleeper')
-      if (sleeper) {
-        sleeper.p.blank(true)
-        sleeper.p.head.rotation.x = 0
-        sleeper.p.head.rotation.y = -0.9
-      }
     }
   } else if (T.phase === 'close') {
+    // 終点なので、この先へは行かない。ドアを閉めて、少ししたら車内の明かりを消す
     train.setOpen(Math.max(0, 1 - T.t / 1.2))
-    if (T.t > 1.6) {
-      T.phase = 'leave'
+    if (T.t > 3.2) {
+      T.phase = 'parked'
       T.t = 0
+      train.setLit(false)
+      sound.click()
     }
-  } else if (T.phase === 'leave') {
-    T.speed = 2.6 * T.t
-    const dist = 1.3 * T.t * T.t
-    carryTrain(trainTo.set(stop.x + dist, 0, stop.z))
-    if (dist > 170) {
+  } else if (T.phase === 'parked') {
+    // 駅を出たら、もう見えないので隠す
+    if (!S.tag.startsWith('@H')) {
       T.phase = 'gone'
       crowd.people
-        .filter((m) => m.used && (m.tag === 'rider' || m.tag === 'sleeper'))
+        .filter((m) => m.used && (m.tag === 'rider' || m.tag === 'last'))
         .forEach(crowd.release)
       train.root.visible = false
       train.fixtures.forEach((f) => {
@@ -1165,7 +1191,7 @@ const updateTrip = (dt) => {
       .forEach(crowd.release)
   }
   // 走る音と、レールのつなぎ目の音。乗っている間は、少し揺れる
-  const moving = ['cruise', 'slow', 'pull', 'arrive', 'leave'].includes(T.phase)
+  const moving = ['cruise', 'slow', 'pull', 'arrive'].includes(T.phase)
   const onboard = S.tag.startsWith('@T')
   sound.setTrain(moving ? (onboard ? 1 : 0.6) * Math.min(1, T.speed / CRUISE + 0.15) : 0)
   T.sway = moving && onboard ? Math.min(1, T.speed / CRUISE) : 0
@@ -2746,6 +2772,7 @@ const updatePlay = (dt) => {
   updateTown(dt)
   updateStreetPeople(dt)
   updateShrine()
+  updateLastPassenger()
   updateStory(dt)
   move(dt)
   if (S.mode !== 'play') return
