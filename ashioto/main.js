@@ -1328,7 +1328,8 @@ const updateSeeker = (f, dt) => {
     whisper('しずかに。')
     sound.whisper()
   }
-  if (S.running && S.walking && dy < 2.4 && d < 7) {
+  // 階段で追いかけられて走っている間は、鈴の音を数えない (逃げるには走るしかないので)
+  if (S.running && S.walking && !S.hunted && dy < 2.4 && d < 7) {
     g.visible = false
     oddDeath('鈴の音を、聞かれました。')
     return
@@ -2691,6 +2692,8 @@ const spawnWalker = (force = {}) => {
 const hideWalker = () => {
   person.group.visible = false
   S.walker = null
+  // 追いかけられていたなら、鈴の音は数え直す (逃げきったあと、すぐに鳴らしすぎで死なないように)
+  if (S.hunted) S.noise = 0
   S.hunted = false
 }
 
