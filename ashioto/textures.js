@@ -451,10 +451,18 @@ export const floorSign = () => {
 
   /**
    * 壁にペンキで描いたような、階の名前を書く
+   * @param red - 赤いペンキで書いて、下へ垂らすなら true
    */
-  const draw = (text) => {
+  const draw = (text, red = false) => {
     ctx.clearRect(0, 0, 256, 160)
-    centerText(ctx, text, 128, 84, `700 118px ${GOTHIC}`, 'rgba(48, 46, 43, 0.92)')
+    const color = red ? 'rgba(122, 14, 9, 0.95)' : 'rgba(48, 46, 43, 0.92)'
+    centerText(ctx, text, 128, 84, `700 118px ${GOTHIC}`, color)
+    if (red) {
+      ctx.fillStyle = color
+      for (let i = 0; i < 7; i++) {
+        ctx.fillRect(60 + Math.random() * 140, 120, 3 + Math.random() * 3, 10 + Math.random() * 30)
+      }
+    }
     tex.needsUpdate = true
   }
 

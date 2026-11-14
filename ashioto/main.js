@@ -1,6 +1,16 @@
 import * as THREE from 'three'
 import './style.css'
-import { FH, FLOORS, SX1, UNITS, buildBuilding, descentPath, doorX, floorY } from './building.js'
+import {
+  FH,
+  FLOORS,
+  SX1,
+  UNITS,
+  buildBuilding,
+  descentPath,
+  doorX,
+  floorY,
+  landingCorner,
+} from './building.js'
 import { createLightPool } from './lights.js'
 import { createFigure } from './figure.js'
 import { createPerson } from './people.js'
@@ -134,6 +144,11 @@ const dayState = () => ({
   peekSeen: 0,
   peekWin: null,
   wrong: null,
+  odd: null,
+  hinted: {},
+  lookBack: 0,
+  stillFor: 0,
+  crouchShown: false,
   walker: null,
   walkerIn: 0,
   lampFig: null,
@@ -217,6 +232,12 @@ scene.add(figure.group)
 const person = createPerson()
 person.group.visible = false
 scene.add(person.group)
+// 踊り場の隅にしゃがんでいる人。顔の無い黒い服で、背を丸めて小さく見せる
+const crouch = createPerson()
+crouch.dress(0, true)
+crouch.group.scale.set(1, 0.6, 1)
+crouch.group.visible = false
+scene.add(crouch.group)
 const sound = createSound()
 const homeDoor = building.doors.find((d) => d.home)
 const eye = new THREE.Vector3()
@@ -412,6 +433,129 @@ const resetWorld = () => {
   S.walkerIn = 8 + Math.random() * 8
   building.homeGlass.mesh.material = building.homeGlass.normal
   closeLift()
+  crouch.group.visible = false
+  if (S.level.events) {
+    S.odd = planOddities()
+    applyOddities()
+  }
+}
+
+/**
+ * 階段の異変を、ばらばらの階に割り当てる。赤い表示の階 (振り返ると死ぬ)、明かりの消えた区間 (止まると死ぬ)、
+ * しゃがむ人 (走ると死ぬ) から、1日目は2つ、2日目からは3つ。ほかに、表示の消えた階が1つ
+ */
+const planOddities = () => {
+  const taken = new Set(S.repeatAt.flatMap((f) => [f, f + 1]))
+  const pick = () => {
+    let f = 0
+    do {
+      f = 3 + Math.floor(Math.random() * (FLOORS - 5))
+    } while (taken.has(f))
+    ;[f - 1, f, f + 1].forEach((n) => taken.add(n))
+    return f
+  }
+  const kinds = ['red', 'dark', 'crouch'].sort(() => Math.random() - 0.5)
+  const plan = {}
+  kinds.slice(0, S.day >= 2 ? 3 : 2).forEach((kind) => {
+    plan[kind] = pick()
+  })
+  plan.blank = pick()
+  return plan
+}
+
+/**
+ * 異変の見た目を付ける。赤い表示、消えた表示、消えた明かり
+ */
+const applyOddities = () => {
+  const o = S.odd
+  const sign = (f) => building.signs.find((s) => s.floor === f)
+  if (o.red) sign(o.red).draw(`${o.red}F`, true)
+  sign(o.blank).draw('')
+  if (!o.dark) return
+  building.fixtures.forEach((f) => {
+    if (f.stair === o.dark + 0.5 || f.stair === o.dark + 1) f.on = false
+  })
+}
+
+/**
+ * 異変のきまりを破った。目の前に顔を出す
+ */
+const oddDeath = (line) => {
+  S.pitch = 0.02
+  die(line, 0.7)
+  faceToFace()
+}
+
+/**
+ * 踊り場の隅にしゃがむ人。近くで走ると、立ち上がって襲ってくる。通り過ぎたら消える
+ */
+const updateCrouch = (f) => {
+  const cf = S.odd.crouch
+  if (!cf) return
+  const g = crouch.group
+  const here = f || Math.floor((S.feet + 0.5) / FH) + 1
+  if (!S.crouchShown && here >= cf - 1 && here <= cf) {
+    S.crouchShown = true
+    g.position.copy(landingCorner(cf))
+    g.rotation.y = -Math.PI * 0.75
+    g.visible = true
+  }
+  if (!g.visible) return
+  const d = Math.hypot(S.pos.x - g.position.x, S.pos.z - g.position.z)
+  const dy = Math.abs(S.feet - g.position.y)
+  if (!S.hinted.crouch && dy < 1.6 && d < 5) {
+    S.hinted.crouch = true
+    whisper('しずかに。')
+  }
+  if (S.running && S.walking && dy < 1.6 && d < 4) {
+    g.visible = false
+    oddDeath('走る音が、聞こえました。')
+    return
+  }
+  if (S.feet > floorY(cf + 1) + 0.5) g.visible = false
+}
+
+/**
+ * 階段の異変の1フレーム分。赤い表示の階では振り返ると、明かりの消えた区間では止まると死ぬ
+ */
+const updateStairOddities = (dt) => {
+  const o = S.odd
+  if (!o || S.final) return
+  const m = /^([LAMB])(\d+)$/.exec(S.tag)
+  const kind = m ? m[1] : ''
+  const f = m ? Number(m[2]) : 0
+  if (o.red && f === o.red) {
+    if (!S.hinted.red && kind === 'L') {
+      S.hinted.red = true
+      whisper('振り返らないで。')
+      sound.whisper()
+    }
+    const fz = -Math.cos(S.yaw)
+    const back = (kind === 'A' && fz > 0.5) || (kind === 'B' && fz < -0.5)
+    S.lookBack = back ? S.lookBack + dt : 0
+    if (S.lookBack > 0.5) {
+      oddDeath('振り返りましたね。')
+      return
+    }
+  }
+  const dark =
+    o.dark &&
+    ((f === o.dark && (kind === 'M' || kind === 'B')) || (f === o.dark + 1 && kind === 'L'))
+  if (dark) {
+    if (!S.hinted.dark) {
+      S.hinted.dark = true
+      whisper('止まらないで。')
+      sound.whisper()
+    }
+    S.stillFor = S.walking ? 0 : S.stillFor + dt
+    if (S.stillFor > 1.4) {
+      oddDeath('暗いところで、立ち止まりましたね。')
+      return
+    }
+  } else {
+    S.stillFor = 0
+  }
+  updateCrouch(f)
 }
 
 /**
@@ -1548,6 +1692,7 @@ const updatePlay = (dt) => {
   updateWalker(dt)
   updateLampFigure(dt)
   updateOddities(dt)
+  updateStairOddities(dt)
   updateLift(dt)
 }
 
@@ -1738,6 +1883,7 @@ if (import.meta.env.DEV) {
     renderer,
     scene,
     camera,
+    crouch,
     tp: (x, floor, z, yaw = S.yaw) => {
       S.pos.set(x, 0, z)
       S.feet = floorY(floor)

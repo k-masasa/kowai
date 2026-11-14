@@ -77,6 +77,11 @@ export const floorY = (f) => (f - 1) * FH
 export const doorX = (i) => HX1 + UNIT * i + 0.75
 
 /**
+ * f 階の上の中間の踊り場の、北西の隅。しゃがむ人を置くのに使う
+ */
+export const landingCorner = (f) => new THREE.Vector3(SX0 + 0.32, floorY(f) + HALF, BACK_Z + 0.32)
+
+/**
  * f + 1 階の踊り場から f 階の踊り場まで、階段を下りる道すじ。人を歩かせるのに使う
  */
 export const descentPath = (f) => {
