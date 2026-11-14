@@ -15,6 +15,7 @@ import { createLightPool } from './lights.js'
 import { createFigure } from './figure.js'
 import { createPerson } from './people.js'
 import { createSound } from './sound.js'
+import { buildStation } from './station.js'
 
 // あしおと
 // 夜、マンションの前の道から歩いて帰る。エレベーターは点検中なので、階段で20階まで上がり、
@@ -103,12 +104,12 @@ const memory = loadMemory()
  * 1日分の状態の、始めの値。日が変わるたびに、これで上書きする
  */
 const dayState = () => ({
-  pos: new THREE.Vector3(-8, 0, 2.0),
+  pos: new THREE.Vector3(-65, 0, -10.9),
   feet: 0,
-  yaw: -1.33,
-  pitch: 0.08,
-  tag: 'S',
-  prevTag: 'S',
+  yaw: Math.PI,
+  pitch: 0.02,
+  tag: '@HP',
+  prevTag: '@HP',
   stride: 0,
   bob: 0,
   walking: false,
@@ -225,6 +226,32 @@ moon.position.set(-20, 40, 30)
 scene.add(moon)
 
 const building = buildBuilding(scene)
+// 最寄りの月見台駅。マンションの前の道の西の端にある
+const homeStation = buildStation(
+  scene,
+  {
+    origin: [-66, 0.6],
+    name: '月見台',
+    kana: 'つきみだい',
+    roman: 'Tsukimidai',
+    prev: ['ちゅうおうちょう', '中央町'],
+    next: ['さくらがおか', '桜丘'],
+    color: '#2e8b57',
+    fares: [
+      ['中央町', '220'],
+      ['港北', '190'],
+      ['西原', '160'],
+      ['月見台', ''],
+      ['桜丘', '140'],
+    ],
+    departures: [
+      ['普通', '桜丘', '0:05'],
+      ['普通', '中央町', '0:12'],
+    ],
+    tag: '@H',
+  },
+  building,
+)
 // 照明の、始めの点き方。日が変わったら、これに戻す
 const lightsAtStart = building.fixtures.map((f) => ({ on: f.on, faulty: f.faulty }))
 const pool = createLightPool(scene, building.fixtures, 10)
@@ -1022,8 +1049,9 @@ const walkSounds = (dist) => {
  * 場所に応じた出来事。建物に入る、階段、20階、追いかけ、2012号室
  */
 const onPlace = () => {
-  // 道とエントランスの前のほかの区画に入ったら、建物の中。壁ぞいに入っても、ここで必ず中になる
-  if (!S.inside && S.tag !== 'S' && S.tag !== 'E') {
+  // マンションの区画 (道とエントランスの前、駅など '@' で始まる区画のほか) に入ったら、建物の中。
+  // 壁ぞいに入っても、ここで必ず中になる
+  if (!S.inside && S.tag !== 'S' && S.tag !== 'E' && !S.tag.startsWith('@')) {
     S.inside = true
     building.zones.find((z) => z.tag === 'E').on = false
     sound.slam(0.25)
@@ -1913,6 +1941,7 @@ if (import.meta.env.DEV) {
     scene,
     camera,
     crouch,
+    homeStation,
     tp: (x, floor, z, yaw = S.yaw) => {
       S.pos.set(x, 0, z)
       S.feet = floorY(floor)

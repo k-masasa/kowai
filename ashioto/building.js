@@ -477,19 +477,19 @@ export const buildBuilding = (scene) => {
   }
 
   // ---------- 外 ----------
-  flat(b, mat.ground, -0.02, -60, 110, -40, 40, 1)
-  flat(b, mat.asphalt, -0.15, -40, 90, 3.15, 11.2, 1)
-  flat(b, mat.paver, 0, -40, 90, 1.0, 3.0, 1)
-  box(b, mat.concrete, -40, 90, -0.15, 0.03, 3.0, 3.15)
-  ;[3.45, 10.85].forEach((z) => flat(b, mat.guard, -0.145, -40, 90, z - 0.06, z + 0.06, 1))
-  for (let x = -38; x <= 88; x += 2) {
+  flat(b, mat.ground, -0.02, -180, 110, -40, 40, 1)
+  flat(b, mat.asphalt, -0.15, -130, 90, 3.15, 11.2, 1)
+  flat(b, mat.paver, 0, -130, 90, 1.0, 3.0, 1)
+  box(b, mat.concrete, -130, 90, -0.15, 0.03, 3.0, 3.15)
+  ;[3.45, 10.85].forEach((z) => flat(b, mat.guard, -0.145, -130, 90, z - 0.06, z + 0.06, 1))
+  for (let x = -128; x <= 88; x += 2) {
     b.add(new THREE.CylinderGeometry(0.03, 0.03, 0.8, 8), mat.guard, at(x, 0.4, 3.08))
   }
   ;[0.5, 0.78].forEach((y) => {
     b.add(
-      new THREE.CylinderGeometry(0.03, 0.03, 128, 8),
+      new THREE.CylinderGeometry(0.03, 0.03, 218, 8),
       mat.guard,
-      at(25, y, 3.08, 0, 0, Math.PI / 2),
+      at(-20, y, 3.08, 0, 0, Math.PI / 2),
     )
   })
   /**
@@ -512,12 +512,24 @@ export const buildBuilding = (scene) => {
   }
 
   // 向かい側のブロック塀と、2階建ての家の並び
-  box(b, mat.block, -40, 90, -0.15, 1.3, 11.3, 11.45)
+  box(b, mat.block, -130, 90, -0.15, 1.3, 11.3, 11.45)
   let seed = 0
-  for (let x = -36; x < 88; x += 10.5 + Math.random() * 4) {
+  for (let x = -126; x < 88; x += 10.5 + Math.random() * 4) {
     house(x, x + 7 + Math.random() * 2.5, 12.5, 19.5, seed, -1)
     seed += 1
   }
+
+  // 駅と西隣の家のあいだの、道の北側の家。裏は線路の柵
+  ;[
+    [-57.5, -50],
+    [-47.5, -39.5],
+    [-37, -28.5],
+    [-26, -18.5],
+  ].forEach(([x0, x1], k) => {
+    house(x0, x1, -8.8, -1.8, k + 1, 1)
+    box(b, mat.block, x0 - 0.6, x1 - 1.6, 0, 1.2, 0.75, 0.9)
+    box(b, mat.block, x1 - 0.6, x1 + 1.0, 0, 1.2, 0.75, 0.9)
+  })
 
   // 西隣の家。道路側にブロック塀と門、駐輪場との間にも塀
   house(-16.2, -9.0, -9.5, -1.8, 5, 1)
@@ -528,7 +540,7 @@ export const buildBuilding = (scene) => {
   box(b, mat.post, -9.32, -9.27, 0, 1.0, 0.6, 0.65)
   box(b, mat.dark, -9.45, -9.14, 1.0, 1.28, 0.5, 0.72)
   // 電柱と電線、街灯
-  const poles = [-14, 16, 46, 76]
+  const poles = [-74, -44, -14, 16, 46, 76]
   poles.forEach((x) => {
     b.add(new THREE.CylinderGeometry(0.14, 0.18, 11, 12), mat.pole, at(x, 5.35, 3.4))
     box(b, mat.pole, x - 0.7, x + 0.7, 9.1, 9.2, 3.35, 3.45)
@@ -536,12 +548,12 @@ export const buildBuilding = (scene) => {
   ;[8.6, 9.0, 9.15].forEach((y, k) => {
     const z = 3.4 + (k - 1) * 0.3
     b.add(
-      new THREE.CylinderGeometry(0.012, 0.012, 130, 6),
+      new THREE.CylinderGeometry(0.012, 0.012, 220, 6),
       mat.wire,
-      at(25, y, z, 0, 0, Math.PI / 2),
+      at(-20, y, z, 0, 0, Math.PI / 2),
     )
   })
-  ;[16, -14].forEach((x) => {
+  ;[16, -14, -44].forEach((x) => {
     box(b, mat.pole, x, x + 0.06, 5.3, 5.36, 3.4, 4.6)
     b.add(new THREE.BoxGeometry(0.22, 0.1, 0.5), mat.steel, at(x + 0.03, 5.27, 4.7))
     const glow = new THREE.Mesh(
@@ -1062,8 +1074,8 @@ export const buildBuilding = (scene) => {
   b.add(new THREE.PlaneGeometry(2.6, 0.17), mat.nameSign, at(5.0, 2.65, 1.505))
   ceilingLight(5.0, 2.55, 0.9, 0xffe3bf, 5, 6).outdoor = true
   zones.push(zone('E', 4.35, 5.65, -0.5, 1.25, () => 0))
-  // 前の道。始めの場所 (x = -8) より西へは戻れない
-  zones.push(zone('S', -9.2, 88, 1.25, 2.75, () => 0))
+  // 前の道。西の端は、最寄り駅の入口
+  zones.push(zone('S', -69, 88, 1.25, 2.75, () => 0))
   // 集合ポスト、掲示板、時計
   box(b, mat.mailbox, HX1 - 0.32, HX1, 0.3, 1.9, -4.55, -1.75)
   box(b, mat.trim, 3.4, 4.42, 0.95, 1.95, BACK_Z, BACK_Z + 0.03)

@@ -1277,3 +1277,194 @@ export const houseFacade = (seed) => {
   })
   return { map, glow }
 }
+
+/**
+ * 駅名標。ひらがなと漢字とローマ字の駅名、下の帯に前と次の駅
+ * @param o - { kana, name, roman, prev, next, color }。prev / next は [ひらがな, 漢字]
+ */
+export const stationBoardTexture = (o) =>
+  canvasTexture(1024, 360, (ctx, w, h) => {
+    ctx.fillStyle = '#f4f4f0'
+    ctx.fillRect(0, 0, w, h)
+    centerText(ctx, o.kana, w / 2, 70, `700 64px ${GOTHIC}`, '#1a1a1a')
+    centerText(ctx, o.name, w / 2, 152, `700 84px ${GOTHIC}`, '#1a1a1a')
+    centerText(ctx, o.roman, w / 2, 222, `500 34px ${GOTHIC}`, '#444')
+    ctx.fillStyle = o.color
+    ctx.fillRect(0, 262, w, 52)
+    ctx.font = `700 28px ${GOTHIC}`
+    ctx.fillStyle = '#ffffff'
+    ctx.textBaseline = 'middle'
+    ctx.textAlign = 'left'
+    ctx.fillText(`← ${o.prev[0]}`, 24, 288)
+    ctx.textAlign = 'right'
+    ctx.fillText(`${o.next[0]} →`, w - 24, 288)
+    ctx.font = `500 22px ${GOTHIC}`
+    ctx.fillStyle = '#333'
+    ctx.textAlign = 'left'
+    ctx.fillText(o.prev[1], 48, 334)
+    ctx.textAlign = 'right'
+    ctx.fillText(o.next[1], w - 48, 334)
+    stains(ctx, w, h, 4, '80, 70, 50', 0.12)
+  })
+
+/**
+ * 駅の建物の上の看板。紺の地に白い駅名。中から光る
+ */
+export const stationNameTexture = (name, roman) =>
+  canvasTexture(1024, 192, (ctx, w, h) => {
+    ctx.fillStyle = '#16233c'
+    ctx.fillRect(0, 0, w, h)
+    centerText(ctx, name, w / 2, 82, `700 92px ${GOTHIC}`, '#f5f7fa')
+    centerText(ctx, roman, w / 2, 160, `500 30px ${GOTHIC}`, '#c9d3e3')
+  })
+
+/**
+ * 発車標。黒い地に、だいだい色と緑の点の文字
+ * @param rows - [種別, 行き先, 時刻] の並び
+ */
+export const departureBoardTexture = (rows, note = '') =>
+  canvasTexture(768, 192, (ctx, w, h) => {
+    ctx.fillStyle = '#0b0b0c'
+    ctx.fillRect(0, 0, w, h)
+    ctx.font = `700 40px ${GOTHIC}`
+    ctx.textBaseline = 'middle'
+    rows.forEach(([kind, dest, time], i) => {
+      const y = 44 + i * 58
+      ctx.textAlign = 'left'
+      ctx.fillStyle = '#58d36b'
+      ctx.fillText(kind, 26, y)
+      ctx.fillStyle = '#ffa53a'
+      ctx.fillText(dest, 160, y)
+      ctx.textAlign = 'right'
+      ctx.fillText(time, w - 26, y)
+    })
+    if (note) centerText(ctx, note, w / 2, h - 30, `700 30px ${GOTHIC}`, '#ff6b3a')
+    for (let x = 0; x < w; x += 4) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.35)'
+      ctx.fillRect(x, 0, 1, h)
+    }
+  })
+
+/**
+ * 券売機の上の運賃表。路線の駅を左から右へ並べて、運賃を添える
+ * @param stations - [駅名, 運賃] の並び。運賃が空なら、この駅
+ */
+export const fareChartTexture = (stations) =>
+  canvasTexture(1024, 320, (ctx, w, h) => {
+    ctx.fillStyle = '#f7f6f1'
+    ctx.fillRect(0, 0, w, h)
+    centerText(ctx, 'きっぷうりば　運賃表', w / 2, 34, `700 30px ${GOTHIC}`, '#222')
+    const y = 170
+    ctx.fillStyle = '#2e8b57'
+    ctx.fillRect(60, y - 6, w - 120, 12)
+    const step = (w - 120) / (stations.length - 1)
+    stations.forEach(([name, fare], i) => {
+      const x = 60 + i * step
+      ctx.fillStyle = fare ? '#ffffff' : '#c8281e'
+      ctx.strokeStyle = '#2e8b57'
+      ctx.lineWidth = 5
+      ctx.beginPath()
+      ctx.arc(x, y, 14, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+      centerText(ctx, name, x, y - 46, `700 24px ${GOTHIC}`, '#222')
+      centerText(ctx, fare || 'この駅', x, y + 46, `700 26px ${GOTHIC}`, fare ? '#222' : '#c8281e')
+    })
+    stains(ctx, w, h, 3, '90, 80, 60', 0.12)
+  })
+
+/**
+ * 駅に貼ってあるポスター
+ * @param kind - 'rush' (駆け込み乗車) / 'last' (終電) / 'ic' (チャージ)
+ */
+export const stationPosterTexture = (kind) =>
+  canvasTexture(256, 360, (ctx, w, h) => {
+    const sets = {
+      rush: ['#ffd23f', '#222', '駆け込み乗車は', '危険です', 'ドアが閉まります'],
+      last: ['#1f3d7a', '#ffffff', '終電のご案内', '中央町方面', '0:12 発'],
+      ic: ['#e6f2ec', '#1d5a2e', 'IC カードの', 'チャージは', '券売機で'],
+    }
+    const [bg, fg, a, bb, c] = sets[kind]
+    ctx.fillStyle = bg
+    ctx.fillRect(0, 0, w, h)
+    centerText(ctx, a, w / 2, 110, `800 30px ${GOTHIC}`, fg)
+    centerText(ctx, bb, w / 2, 160, `800 30px ${GOTHIC}`, fg)
+    centerText(ctx, c, w / 2, 250, `700 24px ${GOTHIC}`, fg)
+    stains(ctx, w, h, 3, '60, 50, 40', 0.15)
+  })
+
+/**
+ * 点字ブロック。黄色の地に、点の並び。1枚で 0.3m 四方
+ */
+export const tactileTexture = () =>
+  canvasTexture(64, 64, (ctx, w, h) => {
+    ctx.fillStyle = '#c9a521'
+    ctx.fillRect(0, 0, w, h)
+    for (let y = 8; y < h; y += 16) {
+      for (let x = 8; x < w; x += 16) {
+        ctx.fillStyle = '#dcb935'
+        ctx.beginPath()
+        ctx.arc(x, y, 4.5, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.25)'
+        ctx.fillRect(x - 3, y + 3, 6, 1.5)
+      }
+    }
+    ctx.fillStyle = 'rgba(40, 30, 10, 0.18)'
+    ctx.fillRect(0, 0, w, 1)
+    ctx.fillRect(0, 0, 1, h)
+  })
+
+/**
+ * 線路のバラスト (砂利)。1枚で 1m 四方
+ */
+export const ballastTexture = () =>
+  canvasTexture(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#4a4741'
+    ctx.fillRect(0, 0, w, h)
+    for (let i = 0; i < 1800; i++) {
+      const tone = 60 + Math.random() * 70
+      ctx.fillStyle = `rgb(${tone}, ${tone - 3}, ${tone - 8})`
+      const r = 2 + Math.random() * 5
+      ctx.beginPath()
+      ctx.ellipse(
+        Math.random() * w,
+        Math.random() * h,
+        r,
+        r * 0.7,
+        Math.random() * 3,
+        0,
+        Math.PI * 2,
+      )
+      ctx.fill()
+    }
+    stains(ctx, w, h, 5, '40, 25, 10', 0.3)
+  })
+
+/**
+ * 自動改札機の上の面。IC の読み取り部と、進めるかどうかの表示
+ */
+export const gateTopTexture = () =>
+  canvasTexture(128, 384, (ctx, w, h) => {
+    ctx.fillStyle = '#d9dcdf'
+    ctx.fillRect(0, 0, w, h)
+    ctx.fillStyle = '#2b2f33'
+    ctx.fillRect(20, 40, w - 40, 60)
+    ctx.fillStyle = '#4fb3ff'
+    ctx.beginPath()
+    ctx.arc(w / 2, 170, 34, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = '#ffffff'
+    ctx.font = `700 22px ${GOTHIC}`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('IC', w / 2, 170)
+    ctx.fillStyle = '#2b2f33'
+    ctx.fillRect(30, 260, w - 60, 10)
+    ctx.fillStyle = '#4ad66d'
+    ctx.beginPath()
+    ctx.moveTo(w / 2, 300)
+    ctx.lineTo(w / 2 + 18, 330)
+    ctx.lineTo(w / 2 - 18, 330)
+    ctx.fill()
+  })
