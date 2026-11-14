@@ -91,6 +91,22 @@ export const wallTexture = () =>
   })
 
 /**
+ * 会社のロビーの壁の、みがいた石の板。灰色がかったベージュに、細かい粒と、板の継ぎ目。
+ * 1枚で 1.2m 四方 (横 1.2m、縦 0.6m の板が2枚)
+ */
+export const lobbyStoneTexture = () =>
+  canvasTexture(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#9d968a'
+    ctx.fillRect(0, 0, w, h)
+    speckle(ctx, w, h, 9000, ['#a9a296', '#8f887c', '#b5afa3', '#7f786d'], 1.8)
+    stains(ctx, w, h, 4, '70, 62, 50', 0.12)
+    ctx.fillStyle = 'rgba(40, 36, 30, 0.5)'
+    ctx.fillRect(0, 0, w, 2)
+    ctx.fillRect(0, h / 2, w, 2)
+    ctx.fillRect(0, 0, 2, h)
+  })
+
+/**
  * 駅の中の壁。白っぽい化粧パネルが並び、細い継ぎ目がある。1枚で 1.8m 四方 (パネル2枚分)
  */
 export const stationPanelTexture = () =>

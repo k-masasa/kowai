@@ -8,9 +8,11 @@ import {
   directoryTexture,
   fraudPosterTexture,
   fridgeTexture,
+  gateLampTexture,
   gateTopTexture,
   goodsTexture,
   kobanSignTexture,
+  lobbyStoneTexture,
   magazineTexture,
   paverTexture,
   shopSignTexture,
@@ -55,7 +57,22 @@ export const buildTown = (scene, origin, shared) => {
     white: new THREE.MeshStandardMaterial({ color: 0xe8e6e0, roughness: 0.6 }),
     line: new THREE.MeshStandardMaterial({ color: 0xdedcd6, roughness: 0.7 }),
     gate: new THREE.MeshStandardMaterial({ color: 0x9aa0a6, roughness: 0.35, metalness: 0.4 }),
-    gateTop: new THREE.MeshStandardMaterial({ map: gateTopTexture(), roughness: 0.4 }),
+    // セキュリティゲートの上の面。カードの読み取り部が光る
+    gateTop: (() => {
+      const map = gateTopTexture()
+      return new THREE.MeshStandardMaterial({
+        map,
+        emissiveMap: map,
+        emissive: 0xffffff,
+        emissiveIntensity: 0.35,
+        roughness: 0.4,
+      })
+    })(),
+    gateGo: new THREE.MeshBasicMaterial({ map: gateLampTexture(true) }),
+    lobbyWall: tiled(lobbyStoneTexture(), 1.2, { roughness: 0.3 }),
+    mat: new THREE.MeshStandardMaterial({ color: 0x2b2c2e, roughness: 0.95 }),
+    button: new THREE.MeshBasicMaterial({ color: 0xffd28a }),
+    frosted: new THREE.MeshBasicMaterial({ color: 0xd9d4c4 }),
     wood: new THREE.MeshStandardMaterial({ color: 0x6b5138, roughness: 0.6 }),
     plant: new THREE.MeshStandardMaterial({ color: 0x2f5a33, roughness: 0.9 }),
     pot: new THREE.MeshStandardMaterial({ color: 0x4a4540, roughness: 0.8 }),
@@ -256,9 +273,14 @@ export const buildTown = (scene, origin, shared) => {
   const LH = 4.2
   flat(b, mat.stone, 0.002, X(-8), X(8), Z(-10), Z(3), 1)
   flat(b, mat.ceiling, LH, X(-8), X(8), Z(-10), Z(3), -1)
-  wallX(b, mat.wall, X(-8), Z(-10), Z(3), 0, LH, 1)
-  wallX(b, mat.wall, X(8), Z(-10), Z(3), 0, LH, -1)
-  wallZ(b, mat.wall, Z(-10), X(-8), X(8), 0, LH, 1)
+  wallX(b, mat.lobbyWall, X(-8), Z(-10), Z(3), 0, LH, 1)
+  wallX(b, mat.lobbyWall, X(8), Z(-10), Z(3), 0, LH, -1)
+  wallZ(b, mat.lobbyWall, Z(-10), X(-8), X(8), 0, LH, 1)
+  // 壁の下の幅木と、入口の足ふきマット
+  box(b, mat.steel, X(-8), X(-7.98), 0, 0.1, Z(-10), Z(2.9))
+  box(b, mat.steel, X(7.98), X(8), 0, 0.1, Z(-10), Z(2.9))
+  box(b, mat.steel, X(-8), X(8), 0, 0.1, Z(-10), Z(-9.98))
+  box(b, mat.mat, X(-1.3), X(1.3), 0, 0.012, Z(1.3), Z(2.9))
   // 正面のガラスの壁と、自動ドア
   ;[
     [-8, -1.2],
@@ -288,6 +310,8 @@ export const buildTown = (scene, origin, shared) => {
   gateX.forEach((x) => {
     box(b, mat.gate, X(x - 0.12), X(x + 0.12), 0, 0.98, Z(-3.7), Z(-2.4))
     b.add(new THREE.PlaneGeometry(0.24, 1.3), mat.gateTop, at(X(x), 0.985, Z(-3.05), -Math.PI / 2))
+    b.add(new THREE.PlaneGeometry(0.15, 0.11), mat.gateGo, at(X(x), 0.8, Z(-2.395)))
+    b.add(new THREE.PlaneGeometry(0.15, 0.11), mat.gateGo, at(X(x), 0.8, Z(-3.705), 0, Math.PI))
   })
   box(b, mat.gate, X(-8), X(-2.42), 0, 1.0, Z(-3.1), Z(-3.0))
   box(b, mat.gate, X(1.42), X(8), 0, 1.0, Z(-3.1), Z(-3.0))
@@ -297,6 +321,8 @@ export const buildTown = (scene, origin, shared) => {
     box(b, mat.dark, X(x - 0.006), X(x + 0.006), 0, 2.25, Z(-10), Z(-9.965))
     box(b, mat.stainless, X(x - 0.7), X(x + 0.7), 2.25, 2.4, Z(-10), Z(-9.95))
     box(b, mat.stainless, X(x + 0.75), X(x + 0.87), 1.0, 1.3, Z(-10), Z(-9.97))
+    b.add(new THREE.CircleGeometry(0.022, 16), mat.button, at(X(x + 0.81), 1.18, Z(-9.968)))
+    b.add(new THREE.CircleGeometry(0.022, 16), mat.off, at(X(x + 0.81), 1.11, Z(-9.968)))
     b.add(new THREE.PlaneGeometry(0.4, 0.14), mat.off, at(X(x), 2.6, Z(-9.965)))
   })
   sign(signTexture(['1', '', ''], 128, 96), 0.12, 0.09, X(-2.4), 2.6, Z(-9.96), 0, true)
@@ -313,13 +339,32 @@ export const buildTown = (scene, origin, shared) => {
     0,
   )
   b.add(new THREE.PlaneGeometry(1.2, 1.6), mat.directory, at(X(-7.98), 1.9, Z(-6), 0, Math.PI / 2))
+  // 植木。鉢から細い幹がのび、葉のかたまりがいくつか
   ;[
     [-6.8, 1.8],
     [6.8, -8.8],
   ].forEach(([x, z]) => {
     b.add(new THREE.CylinderGeometry(0.28, 0.22, 0.55, 16), mat.pot, at(X(x), 0.28, Z(z)))
-    b.add(new THREE.SphereGeometry(0.5, 12, 10), mat.plant, at(X(x), 1.0, Z(z)))
+    b.add(new THREE.CylinderGeometry(0.025, 0.035, 1.3, 8), mat.wood, at(X(x), 1.1, Z(z)))
+    ;[
+      [0, 1.75, 0, 0.32],
+      [0.22, 1.5, 0.1, 0.26],
+      [-0.2, 1.45, -0.12, 0.27],
+      [0.08, 1.25, -0.2, 0.22],
+      [-0.12, 1.95, 0.08, 0.22],
+    ].forEach(([dx, y, dz, r]) => {
+      const leaf = new THREE.SphereGeometry(r, 10, 8).scale(1, 0.75, 1)
+      b.add(leaf, mat.plant, at(X(x + dx), y, Z(z + dz)))
+    })
   })
+  // 東の壁の、守衛室のドア。小さな窓が明るい
+  box(b, mat.dark, X(7.96), X(8), 0, 2.1, Z(-5.6), Z(-4.7))
+  b.add(
+    new THREE.PlaneGeometry(0.4, 0.3),
+    mat.frosted,
+    at(X(7.955), 1.55, Z(-5.15), 0, -Math.PI / 2),
+  )
+  sign(signTexture(['守衛室', ''], 256, 120), 0.36, 0.17, X(7.95), 2.3, Z(-5.15), -Math.PI / 2)
   // 天井の明かり。夜なので、半分は消えている
   ;[
     [0, -6.5, true],
