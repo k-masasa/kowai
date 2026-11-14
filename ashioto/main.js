@@ -166,6 +166,9 @@ const dayState = () => ({
   seekerShown: false,
   seekerT: 0,
   heardFor: 0,
+  // 走って鈴を鳴らし続けた長さ (秒)。歩くと減る。心臓の音を次に鳴らすまでの秒数
+  noise: 0,
+  noiseBeat: 0,
   seekerGone: 0,
   vendTrap: false,
   vendFor: 0,
@@ -1587,6 +1590,30 @@ const ringBell = () => {
 }
 
 /**
+ * 走って鈴を鳴らし続けると、音をたどって面無し様が来る。少し歩けば、おさまる。
+ * 鳴らしすぎると、心臓の音が速くなる。最後の追いかけでは数えない。かんたんでは、知らせるだけで死なない
+ */
+const updateNoise = (dt) => {
+  if (!S.bell || S.final) return
+  const loud = S.running && S.walking
+  S.noise = loud ? S.noise + dt : Math.max(0, S.noise - dt * 0.5)
+  if (S.noise < 2) return
+  if (!S.hinted.noise) {
+    S.hinted.noise = true
+    whisper('鈴が、鳴りすぎている。')
+    sound.whisper()
+  }
+  S.noiseBeat -= dt
+  if (S.noiseBeat <= 0) {
+    S.noiseBeat = Math.max(0.35, 0.9 - 0.2 * (S.noise - 2))
+    sound.heartbeat(Math.min(0.6, 0.25 + 0.12 * (S.noise - 2)))
+  }
+  if (!S.level.events || S.noise < 4.5) return
+  S.noise = 0
+  oddDeath('鈴の音を、たどってきました。')
+}
+
+/**
  * 祠の前に落ちている鈴。近づくと、ひとりでに小さく鳴る。足もとまで来たら拾う。
  * 拾わずに通り過ぎても、いつの間にかポケットに入っている
  */
@@ -2646,6 +2673,8 @@ const updatePlay = (dt) => {
   updateWrongWay(dt)
   if (S.mode !== 'play') return
   updateIdle(dt)
+  updateNoise(dt)
+  if (S.mode !== 'play') return
   updateTorch(dt)
   updateKnob(dt)
   updatePeek(dt)
