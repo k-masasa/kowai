@@ -36,7 +36,7 @@ const WALKER_GAP = [26, 22]
 // events: たまに起こる出来事。torch (懐中電灯が切れる) と peek (窓から覗く) は間隔 (最短、ばらつき) の秒数、
 // knob (ドアノブが鳴る) は、ドアの目の前まで来た時に鳴る確率
 const NORMAL = {
-  days: 3,
+  days: 2,
   start: 9.5,
   walk: 2.45,
   rush: 4.6,
@@ -62,7 +62,7 @@ const LEVELS = {
   },
   normal: NORMAL,
   // むずかしいは、ふつうを詰めてから決める。それまではタイトルで選べない
-  hard: { ...NORMAL, days: 5 },
+  hard: { ...NORMAL, days: 3 },
 }
 
 // ドアノブが鳴ったあと、次に鳴れるようになるまでの秒数
