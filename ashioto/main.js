@@ -167,6 +167,9 @@ const dayState = () => ({
   story: null,
   odd: null,
   hinted: {},
+  // 今やることの案内。出したもの (1日に1回ずつ) と、出す順番を待っているもの
+  guided: {},
+  guides: [],
   lookBack: 0,
   stillFor: 0,
   // 通りで拾った鈴を持っているか。落ちている鈴が、近くでひとりでに鳴ったか
@@ -232,6 +235,8 @@ const S = {
   awayAt: 0,
   awayPending: false,
   whisperTimer: 0,
+  // ささやきの文字を出し終わる時刻 (performance.now)。今やることの案内は、これを待ってから出す
+  whisperUntil: 0,
   ...dayState(),
 }
 
@@ -506,10 +511,35 @@ const whisper = (text, ms = 2600) => {
   const el = $('whisper')
   el.textContent = text
   el.style.opacity = 1
+  S.whisperUntil = performance.now() + ms
   clearTimeout(S.whisperTimer)
   S.whisperTimer = setTimeout(() => {
     el.style.opacity = 0
   }, ms)
+}
+
+/**
+ * 今やることを、案内する。同じ案内は1日に1回。ほかのささやきを出している間は、出し終わるまで待つ
+ * @param key - 案内の名前。1日に1回だけ出すための印
+ */
+const guide = (key, text, ms = 3800) => {
+  if (S.guided[key]) return
+  S.guided[key] = true
+  S.guides.push([text, ms])
+}
+
+/**
+ * 場所ごとの、今やることの案内。待っている案内があれば、前のささやきが消えてから出す
+ */
+const updateGuide = () => {
+  const t = S.tag
+  if (t === '@OL' || t === '@OD') guide('door', '会社を出たら、通りを左へ。駅は、交番の先。')
+  if (/^@C[EG]$/.test(t)) guide('gate', '改札を通って、ホームへ。')
+  if (t === '@CP') guide('platform', '月見台行きの電車を待つ。')
+  if (S.inside && !S.final) guide('lobby', 'エレベーターは点検中。階段で、20階まで上がる。')
+  if (S.guides.length === 0 || performance.now() < S.whisperUntil) return
+  const [text, ms] = S.guides.shift()
+  whisper(text, ms)
 }
 
 /**
@@ -1013,6 +1043,7 @@ const updateTrip = (dt) => {
       T.left = 0
       sound.doorHiss()
       boardWaiters()
+      if (S.tag === '@CP') guide('board', '電車が来た。乗る。', 3000)
     }
   } else if (T.phase === 'board') {
     train.setOpen(Math.min(T.t / 1.2, 1))
@@ -1035,6 +1066,7 @@ const updateTrip = (dt) => {
       train.display.draw(LEGS[0].name, LEGS[0].roman)
     }
   } else if (T.phase === 'depart') {
+    if (T.t > 0.5 && S.tag.startsWith('@T')) guide('ride', '終点の月見台まで、乗っていく。')
     T.speed = Math.min(CRUISE, 2.6 * T.t)
     carryTrain(trainTo.set(work.x + 1.3 * T.t * T.t, 0, work.z))
     if (T.speed >= CRUISE) {
@@ -1203,6 +1235,7 @@ const updateTrip = (dt) => {
       T.phase = 'close'
       T.t = 0
       sound.doorHiss()
+      guide('exit', '改札を出たら、左へ。マンションは、道の先。')
     }
   } else if (T.phase === 'close') {
     // 終点なので、この先へは行かない。ドアを閉めて、少ししたら車内の明かりを消す
@@ -1340,7 +1373,7 @@ const updateSeeker = (f, dt) => {
   g.rotation.y = lerpAngle(g.rotation.y, look, 1 - Math.exp(-(heard ? 4 : 1.5) * dt))
   if (!S.hinted.search && dy < 2.2 && d < 6) {
     S.hinted.search = true
-    whisper('しずかに。')
+    whisper('しずかに。走らないで。')
     sound.whisper()
   }
   // 階段で追いかけられて走っている間は、鈴の音を数えない (逃げるには走るしかないので)
@@ -1472,7 +1505,7 @@ const updateFollower = (dt) => {
   fo.t += dt
   if (fo.t > 1.6 && !S.hinted.follow) {
     S.hinted.follow = true
-    whisper('うしろから、だれか来る。')
+    whisper('うしろから、だれか来る。止まらないで。', 3200)
     sound.whisper()
   }
   if (!fo.stopped && (stairFloor() >= fo.until || /^[HCD]\d/.test(S.tag))) fo.stopped = true
@@ -1493,7 +1526,7 @@ const updateFollower = (dt) => {
     step = 0.75 * dt
     if (!S.hinted.followStill) {
       S.hinted.followStill = true
-      whisper('近づいてくる。')
+      whisper('止まると、近づいてくる。')
       sound.whisper()
     }
   }
@@ -1534,8 +1567,15 @@ const startDay = (n, from = 'office') => {
   sound.setDrone(0.12)
   updateNotice()
   if (S.level.events && Math.random() < 0.45 + 0.2 * (n - 1)) showLampFigure()
-  const goal = n === 1 ? '20階の、2012号室に帰る。' : '今日も、2012号室に帰る。'
-  setTimeout(() => whisper(goal, 4200), 1800)
+  // 始めの案内は、画面が明るくなってから
+  S.whisperUntil = performance.now() + 1800
+  if (from === 'train') {
+    guide('platform', '月見台行きの電車を待つ。')
+  } else if (from === 'home') {
+    guide('home', 'マンションに帰る。エントランスは、すぐ先。')
+  } else {
+    guide('start', n === 1 ? '終電に乗って、家に帰る。' : '今日も、終電で家に帰る。')
+  }
   // ロックを頼んでいる途中は止めない。止めると、ロックが効いた後のクリックは画面の方に行き、
   // 「クリックで戻る」に届かなくなる
   if (S.locked && !S.locking && document.pointerLockElement !== renderer.domElement) pause()
@@ -1750,6 +1790,7 @@ const onStairs = () => {
  */
 const reachTop = () => {
   S.onTop = true
+  guide('top', '20階に着いた。2012号室は、廊下のいちばん奥。')
   homeDoor.hinge.rotation.y = -0.6
   building.room.visible = true
   building.homeLamps.forEach((lamp) => {
@@ -1781,6 +1822,8 @@ const startChase = () => {
   crawler.face(S.pos)
   crawler.randomPose(0)
   crawler.group.visible = true
+  guide('final', 'うしろに、何かいる。見ている間は、止まる。', 3200)
+  guide('final2', '部屋まで、急いで。', 2600)
   S.flickerIn = 3
   S.darkFor = 0
   console.log('%cうしろ', 'color:#a33;font-size:13px')
@@ -1836,7 +1879,7 @@ const updateNoise = (dt) => {
   if (S.noise < 2) return
   if (!S.hinted.noise) {
     S.hinted.noise = true
-    whisper('鈴が、鳴りすぎている。')
+    whisper('鈴が、鳴りすぎている。歩こう。')
     sound.whisper()
   }
   S.noiseBeat -= dt
@@ -2043,7 +2086,7 @@ const updateWrongWay = (dt) => {
   const depth = east ? CX1 - S.pos.x : S.pos.x - HX1
   if (!S.wrong && depth > WRONG_WARN) {
     S.wrong = { floor, east, next: east ? 0 : UNITS - 1, timer: 0 }
-    whisper('そっちじゃない。')
+    whisper('そっちじゃない。戻ろう。')
     sound.whisper()
   }
   if (!S.wrong) return
@@ -2336,7 +2379,7 @@ const updateCrossing = (dt) => {
   const f = S.cross
   if (!S.hinted.cross && S.tag === `L${f}` && S.pos.x < HX1) {
     S.hinted.cross = true
-    whisper('この先は、工事中。東側の階段へ。', 3600)
+    whisper('工事中で、上がれない。廊下を通って、東側の階段へ。', 4000)
   }
   updateHands(dt)
   if (!S.crossChase && S.tag === `C${f}` && S.pos.x > 26 && !S.final) startCrossChase()
@@ -2638,6 +2681,7 @@ const updateIdle = (dt) => {
   S.idle = S.level.strict ? 0 : -40
   S.idleWarned = true
   sound.approach()
+  whisper('足音が、近づいてくる。歩こう。')
 }
 
 /**
@@ -2747,6 +2791,10 @@ const updateLift = (dt) => {
   }
   const L = S.lift
   L.t += dt
+  if (L.t > 1.2 && !S.hinted.lift) {
+    S.hinted.lift = true
+    whisper('エレベーターに、近づかないで。')
+  }
   let k = 0
   if (L.t > 1.2 && L.t < 2.2) {
     k = L.t - 1.2
@@ -2778,7 +2826,7 @@ const updateOddities = (dt) => {
     if (S.vendFor > 2 && !S.hinted.vend) {
       S.hinted.vend = true
       vend.stutter = 0.8
-      whisper('見られてる。')
+      whisper('見られてる。ここで止まらないで。')
     }
     if (S.vendFor > 3.6) {
       oddDeath('明るいところは、よく見えます。')
@@ -3324,7 +3372,7 @@ const updateStory = (dt) => {
     figure.randomPose(0)
     figure.group.visible = true
     sound.suzu(0.08)
-    setTimeout(() => whisper('隣の車両に、だれかいる。', 3000), 1200)
+    setTimeout(() => whisper('隣の車両に、だれかいる。目を離さないで。', 3400), 1200)
   }
   if (st.stage !== 'car') return
   // 目を離すたびに、3.5m ずつ近づく。近づくたびに、ポケットの鈴がひとりでに鳴る。
@@ -3480,6 +3528,7 @@ const updatePlay = (dt) => {
   updateStory(dt)
   move(dt)
   if (S.mode !== 'play') return
+  updateGuide()
   updateAhead(dt)
   updateChase(dt)
   if (S.mode !== 'play') return
