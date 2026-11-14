@@ -17,7 +17,7 @@ import { createPerson } from './people.js'
 import { createSound } from './sound.js'
 import { buildStation } from './station.js'
 import { buildTown } from './town.js'
-import { CAR, buildRideScenery, buildTrain } from './train.js'
+import { CAR, DOORS, buildRideScenery, buildTrain } from './train.js'
 
 // あしおと
 // 夜、マンションの前の道から歩いて帰る。エレベーターは点検中なので、階段で20階まで上がり、
@@ -148,6 +148,9 @@ const dayState = () => ({
   peekWin: null,
   wrong: null,
   trip: null,
+  // 自動で歩かせる時にたどる点 ({ x, z } の並び) と、歩かせている秒数
+  auto: null,
+  autoFor: 0,
   story: null,
   odd: null,
   hinted: {},
@@ -573,6 +576,28 @@ const carryTrain = (to) => {
 const trainTo = new THREE.Vector3()
 
 /**
+ * 止まった電車から、ホームへ降りる道すじ。いちばん近いドアの前まで通路を歩き、ドアを出て、
+ * ホームの点字ブロックの先まで進む。もうドアの前にいれば、そのまま出る
+ * @param stop - 電車が止まっている場所 (1両目の真ん中)
+ */
+const trainExitPath = (stop) => {
+  const door = DOORS.map((d) => stop.x + d).sort(
+    (a, c) => Math.abs(a - S.pos.x) - Math.abs(c - S.pos.x),
+  )[0]
+  const aisleZ = THREE.MathUtils.clamp(S.pos.z, stop.z - 0.7, stop.z + 0.7)
+  const toDoor =
+    Math.abs(S.pos.x - door) < 0.5
+      ? []
+      : [
+          { x: S.pos.x, z: aisleZ },
+          { x: door, z: aisleZ },
+        ]
+  const out = [{ x: door, z: stop.z + 1.45 }].filter((p) => p.z > S.pos.z)
+  S.autoFor = 0
+  return [...toDoor, ...out, { x: door, z: stop.z + 2.9 }]
+}
+
+/**
  * 電車の1フレーム分。中央町のホームで待つ -> 電車が来る -> 乗るとドアが閉まって発車 -> 走る ->
  * まもなく月見台 -> 止まってドアが開く -> 降りたら閉まって走り去る
  */
@@ -683,6 +708,8 @@ const updateTrip = (dt) => {
     if (T.t > 1.2 && !T.said) {
       T.said = true
       whisper('月見台、月見台です。', 3000)
+      // 降りていいのか迷わないように、ここだけは自動で降ろす
+      if (S.tag.startsWith('@T')) S.auto = trainExitPath(stop)
     }
     if (S.tag.startsWith('@H')) {
       T.left += dt
@@ -1326,9 +1353,9 @@ const onPlace = () => {
 }
 
 /**
- * キーでプレイヤーを動かす。歩ける区画からはみ出さないようにして、足元の高さも決める
+ * キーの入力から、進む向きと速さを velocity に入れる
  */
-const move = (dt) => {
+const keyVelocity = (dt) => {
   S.yaw += (pressed('ArrowLeft') - pressed('ArrowRight')) * 1.8 * dt
   const f = pressed('KeyW', 'ArrowUp') - pressed('KeyS', 'ArrowDown')
   const s = pressed('KeyD') - pressed('KeyA')
@@ -1340,6 +1367,40 @@ const move = (dt) => {
   let speed = S.running ? RUN : WALK
   if (f < 0) speed = WALK * 0.65
   velocity.multiplyScalar(speed)
+}
+
+/**
+ * 自動で歩かせる。S.auto の点を順にたどり、進む向きへ顔も向ける。
+ * 最後の点に着いたら (つかえて着けない時は6秒で)、操作を戻す
+ */
+const autoVelocity = (dt) => {
+  S.running = false
+  velocity.set(0, 0, 0)
+  S.autoFor += dt
+  const next = S.auto[0]
+  const dx = next.x - S.pos.x
+  const dz = next.z - S.pos.z
+  const d = Math.hypot(dx, dz)
+  if (d < 0.05 || S.autoFor > 6) {
+    S.auto.shift()
+    if (S.auto.length === 0 || S.autoFor > 6) S.auto = null
+    return
+  }
+  S.yaw = lerpAngle(S.yaw, Math.atan2(-dx, -dz), 1 - Math.exp(-4 * dt))
+  S.pitch *= 1 - Math.min(1, 2 * dt)
+  velocity.set(dx / d, 0, dz / d).multiplyScalar(Math.min(WALK, d / dt))
+}
+
+/**
+ * キーで (自動で歩かせている間は、決めた道すじで) プレイヤーを動かす。
+ * 歩ける区画からはみ出さないようにして、足元の高さも決める
+ */
+const move = (dt) => {
+  if (S.auto) {
+    autoVelocity(dt)
+  } else {
+    keyVelocity(dt)
+  }
   before.copy(S.pos)
   const feet = S.feet
   S.pos.addScaledVector(velocity, dt)
