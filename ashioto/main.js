@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import './style.css'
-import { FH, FLOORS, UNITS, buildBuilding, descentPath, doorX, floorY } from './building.js'
+import { FH, FLOORS, SX1, UNITS, buildBuilding, descentPath, doorX, floorY } from './building.js'
 import { createLightPool } from './lights.js'
 import { createFigure } from './figure.js'
 import { createPerson } from './people.js'
@@ -1263,8 +1263,8 @@ const exitPath = (from) => {
   const pts = []
   for (let f = from - 1; f >= 1; f--) pts.push(...descentPath(f))
   pts.push(
-    new THREE.Vector3(2.8, 0, -0.8),
-    new THREE.Vector3(3.9, 0, -1.3),
+    new THREE.Vector3(SX1, 0, -0.8),
+    new THREE.Vector3(SX1 + 1.0, 0, -1.3),
     new THREE.Vector3(5.0, 0, -0.5),
     new THREE.Vector3(5.0, 0, 1.9),
     new THREE.Vector3(Math.random() < 0.5 ? -9 : 20, 0, 2.1),
@@ -1278,15 +1278,15 @@ const exitPath = (from) => {
 const homePath = (f, unit) => {
   const pts = [
     new THREE.Vector3(4.6, 0, -0.9),
-    new THREE.Vector3(3.9, 0, -1.3),
-    new THREE.Vector3(2.8, 0, -0.8),
+    new THREE.Vector3(SX1 + 1.0, 0, -1.3),
+    new THREE.Vector3(SX1, 0, -0.8),
   ]
   for (let k = 1; k < f; k++) pts.push(...descentPath(k).reverse())
   const y = floorY(f)
   const x = doorX(unit)
   pts.push(
-    new THREE.Vector3(2.8, y, -0.8),
-    new THREE.Vector3(4.2, y, -0.9),
+    new THREE.Vector3(SX1, y, -0.8),
+    new THREE.Vector3(SX1 + 1.2, y, -0.9),
     new THREE.Vector3(6.8, y, -0.7),
     new THREE.Vector3(x, y, -0.7),
     new THREE.Vector3(x, y, -1.25),

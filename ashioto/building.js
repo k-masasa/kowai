@@ -43,7 +43,8 @@ import {
 
 // 4階建ての外廊下のマンション。単位は m
 // x は東西 (東が +)、z は南北 (南の道路側が +)、y は高さ。1階の床が y = 0
-// 西の端に階段室 (x 0 ~ 2.8)、その東にエレベーターホール (x 2.8 ~ 7)、その東に各階12戸が並ぶ外廊下
+// 西の端に階段室 (x 0 ~ 3.3)、その東にエレベーターホール (x 3.3 ~ 7)、その東に各階12戸が並ぶ外廊下
+// 階段は1段の幅が 1.5m の折り返し。西の列 (SX0 ~ DIV0) と東の列 (DIV1 ~ SX1)
 export const FH = 2.9
 export const HALF = FH / 2
 export const FLOORS = 4
@@ -55,9 +56,9 @@ const LAND_Z = -1.5
 const MID_Z = -3.6
 const BACK_Z = -4.8
 const SX0 = 0.2
-const SX1 = 2.8
-const DIV0 = 1.45
-const DIV1 = 1.55
+export const SX1 = 3.3
+const DIV0 = 1.7
+const DIV1 = 1.8
 const HX1 = 7
 const UNIT = 3.2
 const CX1 = HX1 + UNIT * UNITS
@@ -1215,9 +1216,9 @@ export const buildBuilding = (scene) => {
   // ---------- 1階のエントランス ----------
   box(b, mat.alum, SX1, HX1, 2.2, 2.3, 0, FRONT)
   ;[SX1, 4.05, 5.95, HX1 - 0.05].forEach((x) => box(b, mat.alum, x, x + 0.06, 0, 2.5, 0, FRONT))
-  b.add(new THREE.PlaneGeometry(1.15, 2.2), mat.glass, at(3.45, 1.1, 0.07))
+  b.add(new THREE.PlaneGeometry(3.99 - SX1, 2.2), mat.glass, at((SX1 + 4.05) / 2, 1.1, 0.07))
   b.add(new THREE.PlaneGeometry(0.95, 2.2), mat.glass, at(6.48, 1.1, 0.07))
-  b.add(new THREE.PlaneGeometry(4.1, 0.2), mat.glass, at(4.9, 2.4, 0.07))
+  b.add(new THREE.PlaneGeometry(HX1 - SX1, 0.2), mat.glass, at((SX1 + HX1) / 2, 2.4, 0.07))
   const entrance = [-1, 1].map((side) => {
     const g = new THREE.Group()
     const pane = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 2.18), mat.glass)
@@ -1239,13 +1240,13 @@ export const buildBuilding = (scene) => {
   zones.push(zone('S', -9.2, 88, 1.25, 2.75, () => 0))
   // 集合ポスト、掲示板、時計
   box(b, mat.mailbox, HX1 - 0.32, HX1, 0.3, 1.9, -4.55, -1.75)
-  box(b, mat.trim, 3.05, 4.35, 0.95, 1.95, BACK_Z, BACK_Z + 0.03)
+  box(b, mat.trim, 3.4, 4.42, 0.95, 1.95, BACK_Z, BACK_Z + 0.03)
   const notice = noticePaper()
   const paper = new THREE.Mesh(
     new THREE.PlaneGeometry(0.33, 0.44),
     new THREE.MeshStandardMaterial({ map: notice.tex, roughness: 0.9 }),
   )
-  paper.position.set(3.4, 1.45, BACK_Z + 0.035)
+  paper.position.set(3.65, 1.45, BACK_Z + 0.035)
   paper.rotation.z = 0.02
   root.add(paper)
   const rules = new THREE.Mesh(
@@ -1262,7 +1263,7 @@ export const buildBuilding = (scene) => {
       roughness: 0.9,
     }),
   )
-  rules.position.set(3.95, 1.43, BACK_Z + 0.035)
+  rules.position.set(4.17, 1.43, BACK_Z + 0.035)
   rules.rotation.z = -0.03
   root.add(rules)
   const clock = clockFace()
@@ -1327,7 +1328,7 @@ export const buildBuilding = (scene) => {
     root.add(plaque)
     signs.push({ floor: f, draw: sign.draw, label: roof ? 'R' : `${f}F` })
     // 踊り場の照明。屋上の階のは古くて、ときどきちらつく
-    const landLamp = wallLight(2.2, y + 2.25, 0, 0, -1, 0xffe7c9, 3, 5.5)
+    const landLamp = wallLight(SX1 - 0.6, y + 2.25, 0, 0, -1, 0xffe7c9, 3, 5.5)
     landLamp.stair = f
     zones.push(zone(`L${f}`, SX0 + 0.25, SX1 - 0.25, LAND_Z - 0.05, -0.25, () => y))
     if (roof) {
@@ -1362,7 +1363,16 @@ export const buildBuilding = (scene) => {
     box(b, mat.alum, SX0, SX0 + 0.05, y + HALF + 0.97, y + HALF + 1.83, -3.92, -3.87)
     box(b, mat.alum, SX0, SX0 + 0.05, y + HALF + 0.97, y + HALF + 1.01, -4.53, -3.87)
     box(b, mat.alum, SX0, SX0 + 0.05, y + HALF + 1.79, y + HALF + 1.83, -4.53, -3.87)
-    const midLamp = wallLight(1.5, y + HALF + 2.15, BACK_Z + 0.03, 0, 1, 0xffe7c9, 3, 5.5)
+    const midLamp = wallLight(
+      (SX0 + SX1) / 2,
+      y + HALF + 2.15,
+      BACK_Z + 0.03,
+      0,
+      1,
+      0xffe7c9,
+      3,
+      5.5,
+    )
     midLamp.stair = f + 0.5
 
     // 上り (東側の列で奥へ) と、折り返し (西側の列で手前へ)
@@ -1487,7 +1497,7 @@ export const buildBuilding = (scene) => {
   }
   // 階段室の西と南の面、建物の東の端の、上からの雨だれ
   decal(mat.streak, 9.15, 4, -0.204, top + 0.8, -4.43, -Math.PI / 2)
-  decal(mat.streak, 2.8, 3.5, 1.4, top + 1.05, FRONT + 0.004, 0)
+  decal(mat.streak, SX1, 3.5, SX1 / 2, top + 1.05, FRONT + 0.004, 0)
   decal(mat.streak, 9.15, 3.5, CX1 + 0.204, top - 1.65, -4.43, Math.PI / 2)
 
   b.build(root)
