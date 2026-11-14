@@ -366,9 +366,10 @@ export const buildTrain = (scene, shared) => {
         )
         seat(xa, xc, s, a < -8 || c > 8, [a > -9.7, c < 9.7])
         rack(xa, xc, s)
-        // 肩の広告
-        for (let x = xa + 0.36; x + 0.3 < xc; x += 0.66) {
-          const k = Math.floor(Math.abs(x * 3.7 + s * 1.3)) % ads.length
+        // 肩の広告。ホラー映画の広告は、1両に1枚だけ (真ん中の窓の上の、ホームの側)
+        for (let i = 0, x = xa + 0.36; x + 0.3 < xc; i += 1, x += 0.66) {
+          const horror = a === SECTIONS[2][0] && s > 0 && i === 2
+          const k = horror ? HORROR : Math.floor(Math.abs(x * 3.7 + s * 1.3)) % HORROR
           onShoulder(b, mat.adFrame, x - 0.28, x + 0.28, s, 0.1, 0.9, 0.004)
           onShoulder(b, ads[k], x - 0.26, x + 0.26, s, 0.14, 0.86, 0.008)
         }
@@ -426,9 +427,9 @@ export const buildTrain = (scene, shared) => {
         )
       }
     })
-    // 中づり広告。天井から細い針金で下げる。3枚に1枚は、ホラー映画の広告
+    // 中づり広告。天井から細い針金で下げる。ホラー映画の広告は、1両に1枚だけ
     for (let n = 0, x = x0 + 1.6; x < x1 - 1; n += 1, x += 3.1) {
-      const k = n % 3 === 1 ? HORROR : Math.floor(Math.abs(x * 7)) % HORROR
+      const k = n === 1 ? HORROR : Math.floor(Math.abs(x * 7)) % HORROR
       ;[0, Math.PI].forEach((ry) => {
         b.add(
           new THREE.PlaneGeometry(0.52, 0.34),
