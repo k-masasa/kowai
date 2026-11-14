@@ -17,6 +17,7 @@ import {
 } from './kit.js'
 import {
   asphaltTexture,
+  barricadeTexture,
   binTexture,
   blockTexture,
   boardHeaderTexture,
@@ -47,6 +48,8 @@ import {
   roofWarnTexture,
   sidingTexture,
   signTexture,
+  stairArrowTexture,
+  stairNoticeTexture,
   steelDoorTexture,
   streakTexture,
   stoneTileTexture,
@@ -54,15 +57,17 @@ import {
   vendingAdTexture,
   vendingTexture,
   suzuNoticeTexture,
+  tarpTexture,
   waterStainTexture,
   wallTexture,
   wireGlassTexture,
 } from './textures.js'
 
-// 4階建ての外廊下のマンション。単位は m
+// 20階建ての外廊下のマンション。単位は m
 // x は東西 (東が +)、z は南北 (南の道路側が +)、y は高さ。1階の床が y = 0
-// 西の端に階段室 (x 0 ~ 3.3)、その東にエレベーターホール (x 3.3 ~ 7)、その東に各階12戸が並ぶ外廊下
-// 階段は1段の幅が 1.5m の折り返し。西の列 (SX0 ~ DIV0) と東の列 (DIV1 ~ SX1)
+// 西の端に階段室 (x 0 ~ 3.3)、その東にエレベーターホール (x 3.3 ~ 7)、その東に各階12戸が並ぶ外廊下。
+// 外廊下の東の突き当たりに、もう1つの階段室 (x 45.4 ~ 48.7) がある。西の階段室を裏返した形
+// 階段は1段の幅が 1.5m の折り返し。西の階段室では、西の列 (SX0 ~ DIV0) と東の列 (DIV1 ~ SX1)
 export const FH = 2.9
 export const HALF = FH / 2
 export const FLOORS = 20
@@ -77,12 +82,21 @@ const SX0 = 0.2
 export const SX1 = 3.3
 const DIV0 = 1.7
 const DIV1 = 1.8
-const HX1 = 7
+export const HX1 = 7
 const UNIT = 3.2
-const CX1 = HX1 + UNIT * UNITS
+export const CX1 = HX1 + UNIT * UNITS
 const CZ = -1.4
 const FRONT = 0.15
 const DOORWAY = [-1.3, -0.3]
+// 東の階段室は、西の階段室を x = MX / 2 の線で裏返した形。西の階段室の x が、東では MX - x になる
+const MX = SX1 + CX1
+// 東の階段室の、外壁の外の面
+const EX1 = MX + 0.2
+
+/**
+ * 西の階段室の x を、使う階段室の x にする。east なら、裏返した東の階段室の x を返す
+ */
+export const stairX = (x, east = false) => (east ? MX - x : x)
 
 /**
  * f 階の床の高さ
@@ -90,28 +104,30 @@ const DOORWAY = [-1.3, -0.3]
 export const floorY = (f) => (f - 1) * FH
 
 /**
- * f 階の i 番目 (西から0始まり) の部屋のドアの中心の x
+ * f 階の i 番目 (西から0始まり) の部屋のドアの中心の x。部屋番号は東の端が 01 で、西の端が 12
  */
 export const doorX = (i) => HX1 + UNIT * i + 0.75
 
 /**
- * f 階の上の中間の踊り場の、西の列の側。人を立たせるのに使う
+ * f 階の上の中間の踊り場の、外壁の側の列。人を立たせるのに使う
+ * @param east - 東の階段室なら true
  */
-export const landingSpot = (f) => new THREE.Vector3(0.95, floorY(f) + HALF, -4.35)
+export const landingSpot = (f, east = false) =>
+  new THREE.Vector3(stairX(0.95, east), floorY(f) + HALF, -4.35)
 
 /**
- * f 階から上がる階段 (東の列) を、上がりきった所。f 階の踊り場から見上げると、正面に見える
+ * f 階から上がる階段 (廊下の側の列) を、上がりきった所。f 階の踊り場から見上げると、正面に見える
  */
-export const flightTop = (f) =>
-  new THREE.Vector3((DIV1 + SX1) / 2, floorY(f) + HALF, (BACK_Z + MID_Z) / 2)
+export const flightTop = (f, east = false) =>
+  new THREE.Vector3(stairX((DIV1 + SX1) / 2, east), floorY(f) + HALF, (BACK_Z + MID_Z) / 2)
 
 /**
  * f + 1 階の踊り場から f 階の踊り場まで、階段を下りる道すじ。人を歩かせるのに使う
  */
-export const descentPath = (f) => {
+export const descentPath = (f, east = false) => {
   const y = floorY(f)
-  const wx = (SX0 + DIV0) / 2
-  const ex = (DIV1 + SX1) / 2
+  const wx = stairX((SX0 + DIV0) / 2, east)
+  const ex = stairX((DIV1 + SX1) / 2, east)
   const mz = (BACK_Z + MID_Z) / 2
   return [
     new THREE.Vector3(wx, y + FH, -0.9),
@@ -125,8 +141,25 @@ export const descentPath = (f) => {
   ]
 }
 
-// 412号室の玄関と廊下が入る範囲。西の壁、玄関の東の壁、突き当たりの壁、玄関ドアのある壁
-const HOME_X = doorX(UNITS - 1)
+/**
+ * f 階で、片方の階段室の踊り場から、廊下を通って、もう片方の階段室の踊り場まで歩く道すじ
+ * @param east - 東の階段室から歩き出すなら true
+ */
+export const crossPath = (f, east) => {
+  const y = floorY(f)
+  const pts = [
+    new THREE.Vector3((DIV1 + SX1) / 2, y, -0.9),
+    new THREE.Vector3(SX1 + 0.6, y, -0.9),
+    new THREE.Vector3(HX1 - 0.3, y, -0.7),
+    new THREE.Vector3(CX1 - 0.5, y, -0.7),
+    new THREE.Vector3(stairX(SX1 + 0.4, true), y, -0.8),
+    new THREE.Vector3(stairX((DIV1 + SX1) / 2, true), y, -0.9),
+  ]
+  return east ? pts.reverse() : pts
+}
+
+// 2012号室 (廊下の西の端) の玄関と廊下が入る範囲。西の壁、玄関の東の壁、突き当たりの壁、玄関ドアのある壁
+const HOME_X = doorX(0)
 const ROOM = { x0: HOME_X - 0.5, x1: HOME_X + 1.0, z0: CZ - 5.2, z1: CZ - 0.2 }
 
 /**
@@ -262,6 +295,11 @@ export const buildBuilding = (scene) => {
     roofWarn: new THREE.MeshStandardMaterial({ map: roofWarnTexture(), roughness: 0.5 }),
     brass: new THREE.MeshStandardMaterial({ color: 0x9c7d3a, roughness: 0.35, metalness: 0.8 }),
     cone: new THREE.MeshStandardMaterial({ color: 0xb02a1f, roughness: 0.55 }),
+    // 階段の工事。バリケードの板、青いシート、お知らせと矢印の紙
+    barricade: new THREE.MeshStandardMaterial({ map: barricadeTexture(), roughness: 0.6 }),
+    tarp: new THREE.MeshStandardMaterial({ map: tarpTexture(), roughness: 0.75 }),
+    blockNotice: new THREE.MeshStandardMaterial({ map: stairNoticeTexture(), roughness: 0.85 }),
+    blockArrow: new THREE.MeshStandardMaterial({ map: stairArrowTexture(), roughness: 0.85 }),
     cloth: tiled(clothTexture(), 0.9, { roughness: 0.95 }),
     flooring: tiled(flooringTexture(), 1.2, { roughness: 0.45 }),
     woodTrim: new THREE.MeshStandardMaterial({ color: 0x5b4430, roughness: 0.55 }),
@@ -387,53 +425,52 @@ export const buildBuilding = (scene) => {
   /**
    * 屋上へ出る鉄の扉。段を1つ上がった先にあり、レバーに鎖が巻かれて南京錠で留めてある
    * @param y - 屋上の階の床の高さ
+   * @param east - 東の階段室なら true。西の階段室の扉を、裏返した場所に作る
    */
-  const roofDoor = (y) => {
+  const roofDoor = (y, east) => {
     const [z0, z1] = DOORWAY
+    const sx = (x) => stairX(x, east)
+    const turn = east ? -1 : 1
+    // 西の階段室の x で箱を置く (東なら裏返した場所に置く)
+    const sb = (m, x0, x1, y0, y1, za, zb) =>
+      box(b, m, Math.min(sx(x0), sx(x1)), Math.max(sx(x0), sx(x1)), y0, y1, za, zb)
     // 扉の前の段と、扉の下の沓摺り
-    box(b, mat.concrete, SX1 - 0.24, SX1 + 0.12, y, y + 0.18, z0 - 0.02, z1 + 0.02)
-    box(b, mat.nosing, SX1 - 0.245, SX1 - 0.19, y + 0.17, y + 0.186, z0 - 0.02, z1 + 0.02)
-    box(b, mat.stainless, SX1 - 0.005, SX1 + 0.11, y + 0.18, y + 0.195, z0 + 0.03, z1 - 0.03)
+    sb(mat.concrete, SX1 - 0.24, SX1 + 0.12, y, y + 0.18, z0 - 0.02, z1 + 0.02)
+    sb(mat.nosing, SX1 - 0.245, SX1 - 0.19, y + 0.17, y + 0.186, z0 - 0.02, z1 + 0.02)
+    sb(mat.stainless, SX1 - 0.005, SX1 + 0.11, y + 0.18, y + 0.195, z0 + 0.03, z1 - 0.03)
     // 枠。奥は黒くふさいで、すき間から外が見えないようにする
-    box(b, mat.roofFrame, SX1 - 0.025, SX1 + 0.12, y + 0.18, y + 2.1, z0, z0 + 0.05)
-    box(b, mat.roofFrame, SX1 - 0.025, SX1 + 0.12, y + 0.18, y + 2.1, z1 - 0.05, z1)
-    box(b, mat.roofFrame, SX1 - 0.025, SX1 + 0.12, y + 2.05, y + 2.1, z0, z1)
-    wallX(b, mat.black, SX1 + 0.11, z0, z1, y + 0.18, y + 2.1, -1)
+    sb(mat.roofFrame, SX1 - 0.025, SX1 + 0.12, y + 0.18, y + 2.1, z0, z0 + 0.05)
+    sb(mat.roofFrame, SX1 - 0.025, SX1 + 0.12, y + 0.18, y + 2.1, z1 - 0.05, z1)
+    sb(mat.roofFrame, SX1 - 0.025, SX1 + 0.12, y + 2.05, y + 2.1, z0, z1)
+    wallX(b, mat.black, sx(SX1 + 0.11), z0, z1, y + 0.18, y + 2.1, -turn)
     // 扉。ちょうつがいは北 (z0) の側
-    box(b, mat.roofDoor, SX1 + 0.035, SX1 + 0.075, y + 0.198, y + 2.047, z0 + 0.052, z1 - 0.052)
+    sb(mat.roofDoor, SX1 + 0.035, SX1 + 0.075, y + 0.198, y + 2.047, z0 + 0.052, z1 - 0.052)
     // レバーハンドルとサムターン
     const hz = z1 - 0.15
-    box(b, mat.stainless, SX1 + 0.025, SX1 + 0.035, y + 0.92, y + 1.2, hz - 0.025, hz + 0.025)
-    box(b, mat.stainless, SX1 - 0.025, SX1 + 0.025, y + 1.03, y + 1.055, hz - 0.012, hz + 0.012)
-    box(b, mat.stainless, SX1 - 0.042, SX1 - 0.02, y + 1.03, y + 1.055, hz - 0.15, hz + 0.012)
+    sb(mat.stainless, SX1 + 0.025, SX1 + 0.035, y + 0.92, y + 1.2, hz - 0.025, hz + 0.025)
+    sb(mat.stainless, SX1 - 0.025, SX1 + 0.025, y + 1.03, y + 1.055, hz - 0.012, hz + 0.012)
+    sb(mat.stainless, SX1 - 0.042, SX1 - 0.02, y + 1.03, y + 1.055, hz - 0.15, hz + 0.012)
     b.add(
       new THREE.CylinderGeometry(0.018, 0.018, 0.01, 16),
       mat.stainless,
-      at(SX1 + 0.022, y + 1.15, hz, 0, 0, Math.PI / 2),
+      at(sx(SX1 + 0.022), y + 1.15, hz, 0, 0, Math.PI / 2),
     )
-    box(b, mat.stainless, SX1 + 0.002, SX1 + 0.017, y + 1.13, y + 1.17, hz - 0.005, hz + 0.005)
+    sb(mat.stainless, SX1 + 0.002, SX1 + 0.017, y + 1.13, y + 1.17, hz - 0.005, hz + 0.005)
     // ドアクローザー
-    box(b, mat.alum, SX1 - 0.03, SX1 + 0.035, y + 1.92, y + 1.99, z0 + 0.1, z0 + 0.38)
-    box(b, mat.alum, SX1 - 0.045, SX1 - 0.03, y + 1.95, y + 1.965, z0 + 0.34, z0 + 0.62)
-    box(b, mat.alum, SX1 - 0.05, SX1 - 0.025, y + 1.95, y + 2.05, z0 + 0.6, z0 + 0.66)
+    sb(mat.alum, SX1 - 0.03, SX1 + 0.035, y + 1.92, y + 1.99, z0 + 0.1, z0 + 0.38)
+    sb(mat.alum, SX1 - 0.045, SX1 - 0.03, y + 1.95, y + 1.965, z0 + 0.34, z0 + 0.62)
+    sb(mat.alum, SX1 - 0.05, SX1 - 0.025, y + 1.95, y + 2.05, z0 + 0.6, z0 + 0.66)
     // 壁のアイボルト。レバーに巻いた鎖をここまで引いて、南京錠で留める
-    const eye = new THREE.Vector3(SX1 - 0.02, y + 1.0, z1 + 0.1)
-    box(
-      b,
-      mat.stainless,
-      SX1 - 0.004,
-      SX1,
-      eye.y - 0.025,
-      eye.y + 0.025,
-      eye.z - 0.025,
-      eye.z + 0.025,
-    )
+    const eye = new THREE.Vector3(sx(SX1 - 0.02), y + 1.0, z1 + 0.1)
+    sb(mat.stainless, SX1 - 0.004, SX1, eye.y - 0.025, eye.y + 0.025, eye.z - 0.025, eye.z + 0.025)
     b.add(new THREE.TorusGeometry(0.016, 0.0035, 6, 14), mat.stainless, at(eye.x, eye.y, eye.z))
-    const wrap = new THREE.Vector3(SX1 - 0.031, y + 1.0425, hz - 0.09)
+    const wrap = new THREE.Vector3(sx(SX1 - 0.031), y + 1.0425, hz - 0.09)
     for (let k = 0; k < 4; k++) {
       const a = (k / 4) * Math.PI * 2
-      const p = new THREE.Vector3(Math.cos(a), Math.sin(a), 0).multiplyScalar(0.022).add(wrap)
-      link(b, mat.stainless, k, p, new THREE.Vector3(-Math.sin(a), Math.cos(a), 0))
+      const p = new THREE.Vector3(turn * Math.cos(a), Math.sin(a), 0)
+        .multiplyScalar(0.022)
+        .add(wrap)
+      link(b, mat.stainless, k, p, new THREE.Vector3(-turn * Math.sin(a), Math.cos(a), 0))
     }
     chain(
       b,
@@ -442,36 +479,27 @@ export const buildBuilding = (scene) => {
       new THREE.Vector3(eye.x, eye.y - 0.016, eye.z),
       0.07,
     )
-    box(
-      b,
-      mat.brass,
-      SX1 - 0.04,
-      SX1 - 0.018,
-      eye.y - 0.1,
-      eye.y - 0.048,
-      eye.z - 0.022,
-      eye.z + 0.022,
-    )
+    sb(mat.brass, SX1 - 0.04, SX1 - 0.018, eye.y - 0.1, eye.y - 0.048, eye.z - 0.022, eye.z + 0.022)
     b.add(
       new THREE.TorusGeometry(0.014, 0.003, 6, 12, Math.PI),
       mat.stainless,
-      at(SX1 - 0.029, eye.y - 0.034, eye.z, 0, Math.PI / 2),
+      at(sx(SX1 - 0.029), eye.y - 0.034, eye.z, 0, Math.PI / 2),
     )
     ;[-1, 1].forEach((s) => {
       b.add(
         new THREE.CylinderGeometry(0.003, 0.003, 0.014, 6),
         mat.stainless,
-        at(SX1 - 0.029, eye.y - 0.041, eye.z + s * 0.014),
+        at(sx(SX1 - 0.029), eye.y - 0.041, eye.z + s * 0.014),
       )
     })
     // 扉の注意書き
     b.add(
       new THREE.PlaneGeometry(0.3, 0.41),
       mat.roofWarn,
-      at(SX1 + 0.033, y + 1.5, (z0 + z1) / 2 - 0.06, 0, -Math.PI / 2, 0.025),
+      at(sx(SX1 + 0.033), y + 1.5, (z0 + z1) / 2 - 0.06, 0, (-turn * Math.PI) / 2, turn * 0.025),
     )
     // 踊り場の隅のカラーコーン
-    const cx = SX0 + 0.14
+    const cx = sx(SX0 + 0.14)
     const cz = -0.15
     box(b, mat.dark, cx - 0.15, cx + 0.15, y, y + 0.035, cz - 0.15, cz + 0.15)
     b.add(new THREE.CylinderGeometry(0.022, 0.115, 0.6, 16), mat.cone, at(cx, y + 0.335, cz))
@@ -713,7 +741,7 @@ export const buildBuilding = (scene) => {
   // ---------- 植え込みとアプローチ ----------
   ;[
     [-0.6, 3.9],
-    [6.1, CX1 + 0.2],
+    [6.1, EX1],
   ].forEach(([x0, x1]) => {
     box(b, mat.concrete, x0, x1, 0, 0.25, FRONT, 1.0)
     box(b, mat.hedge, x0 + 0.1, x1 - 0.1, 0.25, 0.75, FRONT + 0.1, 0.9)
@@ -722,32 +750,38 @@ export const buildBuilding = (scene) => {
 
   // ---------- 建物の外側 ----------
   const top = FLOORS * FH
-  // 建物の奥の詰まった部分。412号室の玄関と廊下のところだけ、くり抜いておく
+  // 建物の奥の詰まった部分。2012号室の玄関と廊下のところだけ、くり抜いておく
   const homeY = floorY(FLOORS)
   // エレベーターの昇降路もくり抜く
   const holes = [
     [ROOM.x0, ROOM.x1, homeY, homeY + 2.7, ROOM.z0, ROOM.z1],
     [4.45, 5.55, 0, top + 0.1, -6.3, BACK_Z],
   ]
-  boxWithout(b, mat.tile, [0, CX1 + 0.2, 0, top + 0.1, -9, BACK_Z - 0.2], holes)
-  boxWithout(b, mat.tile, [HX1, CX1 + 0.2, 0, top + 0.1, BACK_Z - 0.25, CZ - 0.2], holes)
+  boxWithout(b, mat.tile, [0, MX, 0, top + 0.1, -9, BACK_Z - 0.2], holes)
+  // 東の端は、東の階段室の壁の面と重ならないように、少し手前で止める
+  boxWithout(b, mat.tile, [HX1, CX1 - 0.01, 0, top + 0.1, BACK_Z - 0.25, CZ - 0.2], holes)
+  // 両はしの階段室の外壁と、屋上に出た塔屋
   box(b, mat.tile, -0.2, 0, 0, top + 2.8, -9, FRONT)
-  box(b, mat.tile, CX1, CX1 + 0.2, 0, top + 0.7, CZ - 0.2, FRONT)
+  box(b, mat.tile, MX, EX1, 0, top + 2.8, -9, FRONT)
   box(b, mat.tile, 0, SX1, 0, top + 2.8, 0, FRONT)
+  box(b, mat.tile, CX1, MX, 0, top + 2.8, 0, FRONT)
   box(b, mat.tile, 0, SX1 + 0.05, top + 2.5, top + 3.0, BACK_Z - 0.2, FRONT)
-  box(b, mat.tile, SX1, CX1 + 0.2, top + 0.4, top + 0.75, 0, FRONT)
-  box(b, mat.alum, SX1, CX1 + 0.2, top + 0.75, top + 0.8, -0.02, FRONT + 0.02)
-  // 屋上の床版。階段室の壁と重ならないように少し離し、屋上の扉の前だけは扉の枠の奥から始める
-  box(b, mat.tile, SX1 + 0.01, CX1 + 0.2, top, top + 0.4, -9, DOORWAY[0])
-  box(b, mat.tile, SX1 + 0.12, CX1 + 0.2, top, top + 0.4, DOORWAY[0], DOORWAY[1])
-  box(b, mat.tile, SX1 + 0.01, CX1 + 0.2, top, top + 0.4, DOORWAY[1], FRONT)
-  // 階段室の西の窓 (外から見える方)
+  box(b, mat.tile, CX1 - 0.05, MX, top + 2.5, top + 3.0, BACK_Z - 0.2, FRONT)
+  box(b, mat.tile, SX1, CX1, top + 0.4, top + 0.75, 0, FRONT)
+  box(b, mat.alum, SX1, CX1, top + 0.75, top + 0.8, -0.02, FRONT + 0.02)
+  // 屋上の床版。両はしの階段室の壁と重ならないように少し離し、屋上の扉の前だけは扉の枠の奥から始める
+  box(b, mat.tile, SX1 + 0.01, CX1 - 0.01, top, top + 0.4, -9, DOORWAY[0])
+  box(b, mat.tile, SX1 + 0.12, CX1 - 0.12, top, top + 0.4, DOORWAY[0], DOORWAY[1])
+  box(b, mat.tile, SX1 + 0.01, CX1 - 0.01, top, top + 0.4, DOORWAY[1], FRONT)
+  // 両はしの階段室の窓 (外から見える方)
   for (let f = 1; f <= FLOORS; f++) {
     const y = floorY(f) + HALF + 1.4
-    const pane = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.8), wire.plain)
-    pane.position.set(-0.205, y, -4.2)
-    pane.rotation.y = -Math.PI / 2
-    layerFor(f).add(pane)
+    ;[false, true].forEach((east) => {
+      const pane = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.8), wire.plain)
+      pane.position.set(east ? EX1 + 0.005 : -0.205, y, -4.2)
+      pane.rotation.y = east ? Math.PI / 2 : -Math.PI / 2
+      layerFor(f).add(pane)
+    })
   }
 
   // ---------- 各階 ----------
@@ -762,14 +796,14 @@ export const buildBuilding = (scene) => {
     if (!ground) {
       box(b, mat.ceiling, SX1 + 0.01, HX1, y - 0.4, y, BACK_Z, FRONT)
       box(b, mat.ceiling, HX1, CX1, y - 0.4, y, CZ, FRONT)
-      wallZ(b, mat.tile, FRONT + 0.002, SX1, CX1 + 0.2, y - 0.4, y, 1)
+      wallZ(b, mat.tile, FRONT + 0.002, SX1, CX1, y - 0.4, y, 1)
     }
     flat(b, ground ? mat.stone : mat.sheet, y + 0.001, SX1, HX1, BACK_Z, 0, 1)
     flat(b, mat.sheet, y + 0.001, HX1, CX1, CZ, 0, 1)
     if (f === FLOORS) {
       box(b, mat.ceiling, SX1 + 0.01, HX1, top - 0.4, top, BACK_Z, FRONT)
       box(b, mat.ceiling, HX1, CX1, top - 0.4, top, CZ, FRONT)
-      wallZ(b, mat.tile, FRONT + 0.002, SX1, CX1 + 0.2, top - 0.4, top, 1)
+      wallZ(b, mat.tile, FRONT + 0.002, SX1, CX1, top - 0.4, top, 1)
     }
 
     // 腰壁と柱 (1階のエントランスの前は除く)
@@ -833,11 +867,11 @@ export const buildBuilding = (scene) => {
     hallLights.push(ceilingLight(4.0, y + CEIL, -2.6, 0xfff1df, 4, 7))
     ceilingLight(5.9, y + CEIL, -1.2, 0xfff1df, 4, 7)
 
-    // 外廊下の部屋の並び
+    // 外廊下の部屋の並び。部屋番号は、東の端が 01、西の端 (エレベーターホールの隣) が 12
     let prev = HX1
     for (let i = 0; i < UNITS; i++) {
       const xd = doorX(i)
-      const num = f * 100 + i + 1
+      const num = f * 100 + (UNITS - i)
       wallZ(b, mat.paint, CZ, prev, xd - 0.48, y, y + CEIL, 1)
       wallZ(b, mat.paint, CZ, xd - 0.48, xd + 0.48, y + 2.05, y + CEIL, 1)
       wallX(b, mat.paint, xd - 0.48, CZ - 0.2, CZ, y, y + 2.05, 1)
@@ -853,16 +887,16 @@ export const buildBuilding = (scene) => {
       const leaf = makeLeaf(0.9, 2.025)
       leaf.group.position.set(xd, y, CZ - 0.03)
       layer.add(leaf.group)
-      // ドアの奥は暗くふさぐ。412号室だけは、奥に玄関と廊下がある
-      const isHome = f === FLOORS && i === UNITS - 1
+      // ドアの奥は暗くふさぐ。2012号室だけは、奥に玄関と廊下がある
+      const isHome = f === FLOORS && i === 0
       if (!isHome) wallZ(b, mat.black, CZ - 0.19, xd - 0.48, xd + 0.48, y, y + 2.05, 1)
-      doors.push({ ...leaf, floor: f, num, x: xd, y, z: CZ, rattle: 0, home: isHome })
+      doors.push({ ...leaf, floor: f, num, idx: i, x: xd, y, z: CZ, rattle: 0, home: isHome })
       // 部屋番号の札とインターホンは、ドアの枠とメーターボックスの間に縦に並べる
       const px = xd + 0.66
       box(b, mat.stainless, px - 0.085, px + 0.085, y + 1.525, y + 1.635, CZ, CZ + 0.008)
       const plate = new THREE.PlaneGeometry(0.16, 0.1)
       const uv = plate.attributes.uv
-      for (let k = 0; k < uv.count; k++) uv.setX(k, (i + uv.getX(k)) / 12)
+      for (let k = 0; k < uv.count; k++) uv.setX(k, (UNITS - 1 - i + uv.getX(k)) / 12)
       b.add(plate, plates[f - 1], at(px, y + 1.58, CZ + 0.0085))
       box(b, mat.white, px - 0.055, px + 0.055, y + 1.24, y + 1.4, CZ, CZ + 0.035)
       box(b, mat.dark, px - 0.018, px + 0.018, y + 1.27, y + 1.3, CZ + 0.035, CZ + 0.04)
@@ -904,16 +938,34 @@ export const buildBuilding = (scene) => {
       light.unit = i
     }
     wallZ(b, mat.paint, CZ, prev, CX1, y, y + CEIL, 1)
-    wallX(b, mat.paint, CX1, CZ, 0, y, y + CEIL, -1)
+    // 廊下の東の突き当たり。東の階段室への出入り口と、その上の非常口の表示
+    wallX(b, mat.paint, CX1, CZ, DOORWAY[0], y, y + CEIL, -1)
+    wallX(b, mat.paint, CX1, DOORWAY[1], 0, y, y + CEIL, -1)
+    wallX(b, mat.paint, CX1, DOORWAY[0], DOORWAY[1], y + 2.1, y + CEIL, -1)
+    b.add(
+      new THREE.PlaneGeometry(0.4, 0.15),
+      mat.exit,
+      at(CX1 - 0.005, y + 2.28, -0.8, 0, -Math.PI / 2),
+    )
 
     zones.push(zone(`H${f}`, SX1 + 0.25, HX1 - 0.55, -3.75, -0.25, () => y))
     zones.push(zone(`C${f}`, HX1 - 0.7, CX1 - 0.25, CZ + 0.25, -0.25, () => y))
     zones.push(zone(`D${f}`, SX1 - 0.5, SX1 + 0.5, DOORWAY[0] + 0.25, DOORWAY[1] - 0.25, () => y))
+    const eastDoorway = zone(
+      `D${f}`,
+      CX1 - 0.5,
+      CX1 + 0.5,
+      DOORWAY[0] + 0.25,
+      DOORWAY[1] - 0.25,
+      () => y,
+    )
+    eastDoorway.east = true
+    zones.push(eastDoorway)
   }
 
   layer = root
 
-  // 412号室の中 (最後に入る)。玄関のたたきと靴箱、上がり框の先にまっすぐ廊下が伸び、
+  // 2012号室の中 (最後に入る)。玄関のたたきと靴箱、上がり框の先にまっすぐ廊下が伸び、
   // 両側に部屋のドア、突き当たりに明かりの点いた居間のガラス戸がある
   const homeDoor = doors.find((d) => d.home)
   const room = new THREE.Group()
@@ -1006,7 +1058,7 @@ export const buildBuilding = (scene) => {
     room.add(shoe)
   })
 
-  // 明かり。4階に着くまでは消えている
+  // 明かり。20階に着くまでは消えている
   const homeLamps = []
 
   /**
@@ -1139,155 +1191,240 @@ export const buildBuilding = (scene) => {
   root.add(stand)
 
   // ---------- 階段室 ----------
+  // 西と東の2つ。東は、西を裏返した形で、廊下の東の突き当たりにつながる
   const flight = Math.hypot(LAND_Z - MID_Z, HALF)
   const slope = Math.atan2(HALF, LAND_Z - MID_Z)
-  for (let f = 1; f <= FLOORS + 1; f++) {
-    const y = floorY(f)
-    const roof = f === FLOORS + 1
-    layer = layerFor(f)
-    const wallTop = roof ? y + CEIL : y + FH
-    // 各階の踊り場
-    box(b, mat.concrete, SX0 + 0.01, SX1 - 0.01, y - 0.25, y, LAND_Z, -0.01)
-    if (roof) box(b, mat.ceiling, 0, SX1, y + CEIL, y + CEIL + 0.4, BACK_Z, FRONT)
-    // 壁
-    wallX(b, mat.paint, SX0, BACK_Z, 0, y, wallTop, 1)
-    wallZ(b, mat.paint, BACK_Z, SX0, SX1, y, wallTop, 1)
-    wallZ(b, mat.paint, -0.001, SX0, SX1, y, wallTop, -1)
-    wallX(b, mat.paint, SX1, BACK_Z, DOORWAY[0], y, wallTop, -1)
-    wallX(b, mat.paint, SX1, DOORWAY[1], 0, y, wallTop, -1)
-    wallX(b, mat.paint, SX1, DOORWAY[0], DOORWAY[1], y + 2.1, wallTop, -1)
-    // 階の表示
-    const sign = floorSign()
-    sign.draw(roof ? 'R' : `${f}F`)
-    const plaque = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.85, 0.53),
-      new THREE.MeshStandardMaterial({
-        map: sign.tex,
-        transparent: true,
-        alphaTest: 0.3,
-        roughness: 0.9,
-      }),
-    )
-    plaque.position.set(1.0, y + 1.65, -0.006)
-    plaque.rotation.y = Math.PI
-    layer.add(plaque)
-    signs.push({ floor: f, draw: sign.draw, label: roof ? 'R' : `${f}F` })
-    // 踊り場の照明。屋上の階のは古くて、ときどきちらつく
-    const landLamp = wallLight(SX1 - 0.6, y + 2.25, 0, 0, -1, 0xffe7c9, 3, 5.5)
-    landLamp.stair = f
-    zones.push(zone(`L${f}`, SX0 + 0.25, SX1 - 0.25, LAND_Z - 0.05, -0.25, () => y))
-    if (roof) {
-      landLamp.faulty = true
-      roofDoor(y)
-      continue
-    }
-    // 防火扉 (いつもは開けてある)
-    const door = new THREE.Group()
-    door.position.set(SX1 + 0.05, y, DOORWAY[0])
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(0.045, 2.05, 1.0), mat.steel)
-    panel.position.set(0, 1.025, 0.5)
-    door.add(panel)
-    door.rotation.y = Math.PI
-    layer.add(door)
-    fireDoors.push({ floor: f, group: door })
 
-    // 中間の踊り場と、その窓と照明
-    box(b, mat.concrete, SX0 + 0.01, SX1 - 0.01, y + HALF - 0.25, y + HALF, BACK_Z + 0.01, MID_Z)
-    const pane = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.8), wire.plain)
-    pane.position.set(SX0 + 0.006, y + HALF + 1.4, -4.2)
-    pane.rotation.y = Math.PI / 2
-    layer.add(pane)
-    windows.push({
-      mesh: pane,
-      normal: wire.plain,
-      peek: wire.peek,
-      floor: f + 0.5,
-      pos: pane.position,
-    })
-    box(b, mat.alum, SX0, SX0 + 0.05, y + HALF + 0.97, y + HALF + 1.83, -4.53, -4.48)
-    box(b, mat.alum, SX0, SX0 + 0.05, y + HALF + 0.97, y + HALF + 1.83, -3.92, -3.87)
-    box(b, mat.alum, SX0, SX0 + 0.05, y + HALF + 0.97, y + HALF + 1.01, -4.53, -3.87)
-    box(b, mat.alum, SX0, SX0 + 0.05, y + HALF + 1.79, y + HALF + 1.83, -4.53, -3.87)
-    const midLamp = wallLight(
-      (SX0 + SX1) / 2,
-      y + HALF + 2.15,
-      BACK_Z + 0.03,
-      0,
-      1,
-      0xffe7c9,
-      3,
-      5.5,
-    )
-    midLamp.stair = f + 0.5
-
-    // 上り (東側の列で奥へ) と、折り返し (西側の列で手前へ)
-    for (let k = 0; k < STEPS; k++) {
-      const run = (LAND_Z - MID_Z) / STEPS
-      const za0 = LAND_Z - (k + 1) * run
-      const ya = y + (k + 1) * RISE
-      box(b, mat.concrete, DIV1, SX1 - 0.01, ya - RISE - 0.06, ya, za0, za0 + run)
-      box(b, mat.nosing, DIV1, SX1 - 0.01, ya - 0.01, ya + 0.004, za0 + run - 0.05, za0 + run)
-      const zb0 = MID_Z + k * run
-      const yb = y + HALF + (k + 1) * RISE
-      box(b, mat.concrete, SX0 + 0.01, DIV0, yb - RISE - 0.06, yb, zb0, zb0 + run)
-      box(b, mat.nosing, SX0 + 0.01, DIV0, yb - 0.01, yb + 0.004, zb0, zb0 + 0.05)
+  /**
+   * 階段室を1つ作る。1階から、屋上の階 (屋上へ出る扉の前の踊り場) まで
+   * @param east - 東の階段室なら true。西の階段室の x を裏返して置く
+   */
+  const buildStairs = (east) => {
+    const sx = (x) => stairX(x, east)
+    const turn = east ? -1 : 1
+    // 西の階段室の x で、箱や壁を置く (東なら裏返した場所に置く)
+    const sbox = (m, x0, x1, y0, y1, z0, z1) =>
+      box(b, m, Math.min(sx(x0), sx(x1)), Math.max(sx(x0), sx(x1)), y0, y1, z0, z1)
+    const swallX = (m, x, z0, z1, y0, y1, dir) => wallX(b, m, sx(x), z0, z1, y0, y1, dir * turn)
+    const swallZ = (m, z, x0, x1, y0, y1, dir) =>
+      wallZ(b, m, z, Math.min(sx(x0), sx(x1)), Math.max(sx(x0), sx(x1)), y0, y1, dir)
+    const area = (tag, x0, x1, z0, z1, h) => {
+      const z = zone(tag, Math.min(sx(x0), sx(x1)), Math.max(sx(x0), sx(x1)), z0, z1, h)
+      z.east = east
+      zones.push(z)
     }
-    // 階段の裏の斜めの板
-    b.add(
-      new THREE.BoxGeometry(SX1 - DIV1 - 0.02, 0.15, flight),
-      mat.concrete,
-      at((DIV1 + SX1) / 2, y + HALF / 2 - 0.16, (LAND_Z + MID_Z) / 2, slope),
-    )
-    b.add(
-      new THREE.BoxGeometry(DIV0 - SX0 - 0.02, 0.15, flight),
-      mat.concrete,
-      at((SX0 + DIV0) / 2, y + HALF * 1.5 - 0.16, (LAND_Z + MID_Z) / 2, -slope),
-    )
-    // 真ん中の仕切り壁と手すり
-    box(b, mat.paint, DIV0, DIV1, y, y + FH, MID_Z, LAND_Z)
-    const railA = Math.atan2(LAND_Z - MID_Z, HALF)
-    ;[
-      [DIV1 + 0.06, y + HALF / 2 + 0.85, -railA],
-      [SX1 - 0.06, y + HALF / 2 + 0.85, -railA],
-      [DIV0 - 0.06, y + HALF * 1.5 + 0.85, railA],
-      [SX0 + 0.06, y + HALF * 1.5 + 0.85, railA],
-    ].forEach(([x, yy, a]) => {
-      b.add(
-        new THREE.CylinderGeometry(0.02, 0.02, flight, 8),
-        mat.stainless,
-        at(x, yy, (LAND_Z + MID_Z) / 2, a),
+    for (let f = 1; f <= FLOORS + 1; f++) {
+      const y = floorY(f)
+      const roof = f === FLOORS + 1
+      layer = layerFor(f)
+      const wallTop = roof ? y + CEIL : y + FH
+      // 各階の踊り場
+      sbox(mat.concrete, SX0 + 0.01, SX1 - 0.01, y - 0.25, y, LAND_Z, -0.01)
+      if (roof) sbox(mat.ceiling, 0, SX1, y + CEIL, y + CEIL + 0.4, BACK_Z, FRONT)
+      // 壁
+      swallX(mat.paint, SX0, BACK_Z, 0, y, wallTop, 1)
+      swallZ(mat.paint, BACK_Z, SX0, SX1, y, wallTop, 1)
+      swallZ(mat.paint, -0.001, SX0, SX1, y, wallTop, -1)
+      swallX(mat.paint, SX1, BACK_Z, DOORWAY[0], y, wallTop, -1)
+      swallX(mat.paint, SX1, DOORWAY[1], 0, y, wallTop, -1)
+      swallX(mat.paint, SX1, DOORWAY[0], DOORWAY[1], y + 2.1, wallTop, -1)
+      // 階の表示
+      const sign = floorSign()
+      sign.draw(roof ? 'R' : `${f}F`)
+      const plaque = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.85, 0.53),
+        new THREE.MeshStandardMaterial({
+          map: sign.tex,
+          transparent: true,
+          alphaTest: 0.3,
+          roughness: 0.9,
+        }),
       )
-    })
-    if (f === 1) {
-      box(b, mat.paint, SX0, DIV0, 0, HALF, BACK_Z, LAND_Z)
-      wallZ(b, mat.paint, LAND_Z, SX0, DIV0, HALF, FH - 0.2, 1)
-    }
+      plaque.position.set(sx(1.0), y + 1.65, -0.006)
+      plaque.rotation.y = Math.PI
+      layer.add(plaque)
+      signs.push({ floor: f, east, draw: sign.draw, label: roof ? 'R' : `${f}F` })
+      // 踊り場の照明。屋上の階のは古くて、ときどきちらつく
+      const landLamp = wallLight(sx(SX1 - 0.6), y + 2.25, 0, 0, -1, 0xffe7c9, 3, 5.5)
+      landLamp.stair = f
+      landLamp.east = east
+      area(`L${f}`, SX0 + 0.25, SX1 - 0.25, LAND_Z - 0.05, -0.25, () => y)
+      if (roof) {
+        landLamp.faulty = true
+        roofDoor(y, east)
+        continue
+      }
+      // 防火扉 (いつもは開けてある)。西は、ホールの側で北の壁に沿わせてある。
+      // 東は、廊下が細くて開けておく場所が無いので、階段室の側で、南の壁の方へ開けてある
+      const door = new THREE.Group()
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(0.045, 2.05, 1.0), mat.steel)
+      door.add(panel)
+      if (east) {
+        door.position.set(CX1 + 0.05, y, DOORWAY[1])
+        panel.position.set(0, 1.025, -0.5)
+      } else {
+        door.position.set(SX1 + 0.05, y, DOORWAY[0])
+        panel.position.set(0, 1.025, 0.5)
+      }
+      const open = east ? -Math.PI / 2 : Math.PI
+      door.rotation.y = open
+      layer.add(door)
+      fireDoors.push({ floor: f, east, open, group: door })
 
-    const run = LAND_Z - MID_Z
-    zones.push(zone(`M${f}`, SX0 + 0.25, SX1 - 0.25, BACK_Z + 0.25, MID_Z + 0.05, () => y + HALF))
-    zones.push(
-      zone(
+      // 中間の踊り場と、その窓と照明
+      sbox(mat.concrete, SX0 + 0.01, SX1 - 0.01, y + HALF - 0.25, y + HALF, BACK_Z + 0.01, MID_Z)
+      const pane = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.8), wire.plain)
+      pane.position.set(sx(SX0 + 0.006), y + HALF + 1.4, -4.2)
+      pane.rotation.y = (turn * Math.PI) / 2
+      layer.add(pane)
+      windows.push({
+        mesh: pane,
+        normal: wire.plain,
+        peek: wire.peek,
+        floor: f + 0.5,
+        pos: pane.position,
+      })
+      sbox(mat.alum, SX0, SX0 + 0.05, y + HALF + 0.97, y + HALF + 1.83, -4.53, -4.48)
+      sbox(mat.alum, SX0, SX0 + 0.05, y + HALF + 0.97, y + HALF + 1.83, -3.92, -3.87)
+      sbox(mat.alum, SX0, SX0 + 0.05, y + HALF + 0.97, y + HALF + 1.01, -4.53, -3.87)
+      sbox(mat.alum, SX0, SX0 + 0.05, y + HALF + 1.79, y + HALF + 1.83, -4.53, -3.87)
+      const midLamp = wallLight(
+        sx((SX0 + SX1) / 2),
+        y + HALF + 2.15,
+        BACK_Z + 0.03,
+        0,
+        1,
+        0xffe7c9,
+        3,
+        5.5,
+      )
+      midLamp.stair = f + 0.5
+      midLamp.east = east
+
+      // 上り (廊下の側の列で奥へ) と、折り返し (外壁の側の列で手前へ)
+      for (let k = 0; k < STEPS; k++) {
+        const run = (LAND_Z - MID_Z) / STEPS
+        const za0 = LAND_Z - (k + 1) * run
+        const ya = y + (k + 1) * RISE
+        sbox(mat.concrete, DIV1, SX1 - 0.01, ya - RISE - 0.06, ya, za0, za0 + run)
+        sbox(mat.nosing, DIV1, SX1 - 0.01, ya - 0.01, ya + 0.004, za0 + run - 0.05, za0 + run)
+        const zb0 = MID_Z + k * run
+        const yb = y + HALF + (k + 1) * RISE
+        sbox(mat.concrete, SX0 + 0.01, DIV0, yb - RISE - 0.06, yb, zb0, zb0 + run)
+        sbox(mat.nosing, SX0 + 0.01, DIV0, yb - 0.01, yb + 0.004, zb0, zb0 + 0.05)
+      }
+      // 階段の裏の斜めの板
+      b.add(
+        new THREE.BoxGeometry(SX1 - DIV1 - 0.02, 0.15, flight),
+        mat.concrete,
+        at(sx((DIV1 + SX1) / 2), y + HALF / 2 - 0.16, (LAND_Z + MID_Z) / 2, slope),
+      )
+      b.add(
+        new THREE.BoxGeometry(DIV0 - SX0 - 0.02, 0.15, flight),
+        mat.concrete,
+        at(sx((SX0 + DIV0) / 2), y + HALF * 1.5 - 0.16, (LAND_Z + MID_Z) / 2, -slope),
+      )
+      // 真ん中の仕切り壁と手すり
+      sbox(mat.paint, DIV0, DIV1, y, y + FH, MID_Z, LAND_Z)
+      const railA = Math.atan2(LAND_Z - MID_Z, HALF)
+      ;[
+        [DIV1 + 0.06, y + HALF / 2 + 0.85, -railA],
+        [SX1 - 0.06, y + HALF / 2 + 0.85, -railA],
+        [DIV0 - 0.06, y + HALF * 1.5 + 0.85, railA],
+        [SX0 + 0.06, y + HALF * 1.5 + 0.85, railA],
+      ].forEach(([x, yy, a]) => {
+        b.add(
+          new THREE.CylinderGeometry(0.02, 0.02, flight, 8),
+          mat.stainless,
+          at(sx(x), yy, (LAND_Z + MID_Z) / 2, a),
+        )
+      })
+      if (f === 1) {
+        sbox(mat.paint, SX0, DIV0, 0, HALF, BACK_Z, LAND_Z)
+        swallZ(mat.paint, LAND_Z, SX0, DIV0, HALF, FH - 0.2, 1)
+      }
+
+      const run = LAND_Z - MID_Z
+      area(`M${f}`, SX0 + 0.25, SX1 - 0.25, BACK_Z + 0.25, MID_Z + 0.05, () => y + HALF)
+      area(
         `A${f}`,
         DIV1 + 0.25,
         SX1 - 0.25,
         MID_Z,
         LAND_Z,
         (x, z) => y + ((LAND_Z - z) / run) * HALF,
-      ),
-    )
-    zones.push(
-      zone(
+      )
+      area(
         `B${f}`,
         SX0 + 0.25,
         DIV0 - 0.25,
         MID_Z,
         LAND_Z,
         (x, z) => y + HALF + (1 - (LAND_Z - z) / run) * HALF,
-      ),
-    )
+      )
+    }
   }
+  buildStairs(false)
+  buildStairs(true)
 
   layer = root
+
+  // ---------- 階段の工事 ----------
+  // 西の階段の、ある階から上へ上がる所 (廊下の側の列の1段目の奥) を、バリケードと青いシートでふさぐ。
+  // どの階をふさぐかは日ごとに変えるので、高さ 0 で作っておき、blockStairs で動かす
+  const blockade = new THREE.Group()
+  root.add(blockade)
+  const kb = makeBuilder()
+  const zb = LAND_Z - 0.22
+  const bx0 = DIV1 + 0.04
+  const bx1 = SX1 - 0.04
+  // バリケード。黄色と黒のしまの板を2枚、両はしの脚で支える
+  ;[bx0 + 0.06, bx1 - 0.06].forEach((x) => {
+    box(kb, mat.steel, x - 0.02, x + 0.02, RISE, RISE + 1.0, zb - 0.02, zb + 0.02)
+    box(kb, mat.steel, x - 0.025, x + 0.025, RISE, RISE + 0.03, zb - 0.22, zb + 0.22)
+  })
+  ;[0.5, 0.88].forEach((h) => {
+    box(kb, mat.barricade, bx0, bx1, RISE + h - 0.07, RISE + h + 0.07, zb - 0.012, zb + 0.012)
+  })
+  // 奥の青いシート。上の階の踊り場の裏から、2段目まで下げる
+  kb.add(
+    new THREE.PlaneGeometry(bx1 - bx0 + 0.04, 2.55),
+    mat.tarp,
+    at((bx0 + bx1) / 2, RISE * 2 + 1.275, LAND_Z - 0.42),
+  )
+  // シートに貼った、工事のお知らせ
+  kb.add(
+    new THREE.PlaneGeometry(0.44, 0.58),
+    mat.blockNotice,
+    at((bx0 + bx1) / 2, 1.55, LAND_Z - 0.41, 0, 0, 0.015),
+  )
+  // 1段目の隅のカラーコーン
+  const kcx = SX1 - 0.17
+  const kcz = LAND_Z - 0.12
+  kb.add(new THREE.CylinderGeometry(0.022, 0.115, 0.6, 16), mat.cone, at(kcx, RISE + 0.3, kcz))
+  kb.add(
+    new THREE.CylinderGeometry(0.057, 0.076, 0.12, 16, 1, true),
+    mat.white,
+    at(kcx, RISE + 0.33, kcz),
+  )
+  // 出入り口の横の壁に、東の階段への矢印の紙
+  kb.add(
+    new THREE.PlaneGeometry(0.34, 0.24),
+    mat.blockArrow,
+    at(SX1 - 0.006, 1.45, DOORWAY[0] - 0.32, 0, -Math.PI / 2, -0.02),
+  )
+  kb.build(blockade)
+
+  /**
+   * 西の階段の、k 階から上へ上がる所をふさぐ。前にふさいでいた階は、通れるように戻す
+   */
+  const blockStairs = (k) => {
+    blockade.position.y = floorY(k)
+    zones.forEach((z) => {
+      if (z.east || !/^A\d+$/.test(z.tag)) return
+      z.on = z.tag !== `A${k}`
+    })
+  }
 
   // ---------- 古び ----------
   // 雨だれ、床の端の汚れ、天井の雨じみ。どれも透ける絵を面に重ねて貼る
@@ -1338,14 +1475,16 @@ export const buildBuilding = (scene) => {
       const x = HX1 + 2 + Math.random() * (len - 4)
       decal(mat.waterStain, size, size, x, y + CEIL - 0.004, -0.45, 0, Math.PI / 2, 0, 1)
     }
-    // 階段室の西の窓の下
+    // 両はしの階段室の窓の下
     const wy = y + HALF + 1.4
     decal(mat.streak, 0.7, 1.6, -0.204, wy - 1.2, -4.2, -Math.PI / 2, 0, Math.random(), 0.12)
+    decal(mat.streak, 0.7, 1.6, EX1 + 0.004, wy - 1.2, -4.2, Math.PI / 2, 0, Math.random(), 0.12)
   }
-  // 階段室の西と南の面、建物の東の端の、上からの雨だれ
+  // 両はしの階段室の外の面と南の面の、上からの雨だれ
   decal(mat.streak, 9.15, 4, -0.204, top + 0.8, -4.43, -Math.PI / 2)
   decal(mat.streak, SX1, 3.5, SX1 / 2, top + 1.05, FRONT + 0.004, 0)
-  decal(mat.streak, 9.15, 3.5, CX1 + 0.204, top - 1.65, -4.43, Math.PI / 2)
+  decal(mat.streak, 9.15, 4, EX1 + 0.004, top + 0.8, -4.43, Math.PI / 2)
+  decal(mat.streak, SX1, 3.5, (CX1 + MX) / 2, top + 1.05, FRONT + 0.004, 0)
 
   b.build(root)
 
@@ -1407,5 +1546,6 @@ export const buildBuilding = (scene) => {
     clock,
     notice,
     resolve,
+    blockStairs,
   }
 }

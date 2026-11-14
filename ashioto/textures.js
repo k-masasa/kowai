@@ -1043,6 +1043,96 @@ export const roofWarnTexture = () =>
   })
 
 /**
+ * 工事のバリケードの板。黄色と黒の、ななめのしま。1枚で 1.4m の長さ
+ */
+export const barricadeTexture = () =>
+  canvasTexture(512, 64, (ctx, w, h) => {
+    ctx.fillStyle = '#e8bf1c'
+    ctx.fillRect(0, 0, w, h)
+    ctx.fillStyle = '#1b1b1b'
+    for (let x = -h; x < w + h; x += 64) {
+      ctx.beginPath()
+      ctx.moveTo(x, h)
+      ctx.lineTo(x + 32, h)
+      ctx.lineTo(x + 32 + h, 0)
+      ctx.lineTo(x + h, 0)
+      ctx.fill()
+    }
+    stains(ctx, w, h, 3, '60, 50, 30', 0.25)
+  })
+
+/**
+ * 工事でかけた青いシート。たてのしわと、上のはしのはと目
+ */
+export const tarpTexture = () =>
+  canvasTexture(256, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#1f4f8f'
+    ctx.fillRect(0, 0, w, h)
+    for (let i = 0; i < 9; i++) {
+      const x = Math.random() * w
+      const g = ctx.createLinearGradient(x - 18, 0, x + 18, 0)
+      g.addColorStop(0, 'rgba(0, 0, 0, 0)')
+      g.addColorStop(0.5, `rgba(0, 0, 0, ${0.15 + Math.random() * 0.2})`)
+      g.addColorStop(1, 'rgba(0, 0, 0, 0)')
+      ctx.fillStyle = g
+      ctx.fillRect(x - 18, 0, 36, h)
+    }
+    for (let x = 16; x < w; x += 56) {
+      ctx.fillStyle = '#c9ccd0'
+      ctx.beginPath()
+      ctx.arc(x, 14, 6, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#10243f'
+      ctx.beginPath()
+      ctx.arc(x, 14, 3, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    stains(ctx, w, h, 6, '20, 20, 20', 0.25)
+  })
+
+/**
+ * 階段をふさいだシートに貼った、工事のお知らせ。上の階へは、東の階段を使うように
+ */
+export const stairNoticeTexture = () =>
+  canvasTexture(320, 420, (ctx, w, h) => {
+    ctx.fillStyle = '#efece4'
+    ctx.fillRect(0, 0, w, h)
+    stains(ctx, w, h, 4, '150, 118, 60', 0.2)
+    ctx.fillStyle = '#e8bf1c'
+    ctx.fillRect(18, 22, w - 36, 64)
+    centerText(ctx, '工事中', w / 2, 55, `800 42px ${GOTHIC}`, '#1b1b1b')
+    ;['階段補修工事のため、', 'この先は通れません。'].forEach((line, i) => {
+      centerText(ctx, line, w / 2, 130 + i * 36, `700 24px ${GOTHIC}`, '#262320')
+    })
+    ;['上の階へは、', '東側の階段を', 'ご利用ください。'].forEach((line, i) => {
+      centerText(ctx, line, w / 2, 232 + i * 38, `800 27px ${GOTHIC}`, '#b3241c')
+    })
+    centerText(ctx, '管理組合', w / 2, h - 30, `500 20px ${GOTHIC}`, '#4b463f')
+  })
+
+/**
+ * 階段室の出入り口の横に貼った、東の階段への矢印
+ */
+export const stairArrowTexture = () =>
+  canvasTexture(320, 224, (ctx, w, h) => {
+    ctx.fillStyle = '#efece4'
+    ctx.fillRect(0, 0, w, h)
+    stains(ctx, w, h, 3, '150, 118, 60', 0.2)
+    centerText(ctx, '東側の階段', w / 2, 52, `800 34px ${GOTHIC}`, '#262320')
+    ctx.fillStyle = '#2e7d4a'
+    ctx.beginPath()
+    ctx.moveTo(48, 120)
+    ctx.lineTo(196, 120)
+    ctx.lineTo(196, 92)
+    ctx.lineTo(268, 140)
+    ctx.lineTo(196, 188)
+    ctx.lineTo(196, 160)
+    ctx.lineTo(48, 160)
+    ctx.closePath()
+    ctx.fill()
+  })
+
+/**
  * くもりガラス。dark は暗い部屋、lit は明かりの点いた部屋、peek はすぐ裏に人が立っている
  */
 export const frostedTexture = (mode) =>
