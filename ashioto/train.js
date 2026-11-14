@@ -140,13 +140,13 @@ export const buildTrain = (scene, shared) => {
     adFrame: new THREE.MeshStandardMaterial({ color: 0xb9bcbf, roughness: 0.35, metalness: 0.5 }),
     screenOff: new THREE.MeshStandardMaterial({ color: 0x0b0c0e, roughness: 0.15, metalness: 0.3 }),
     strap: new THREE.MeshStandardMaterial({ color: 0xf2f0ea, roughness: 0.5 }),
-    // 窓ガラス。外を少し暗くして、走り出したら車内が映り込む (夜の窓は、鏡のように車内が映る)
+    // 窓ガラス。外をほんの少し暗くして、走り出したら車内がうっすら映り込む。外の明かりが見えるくらいに弱く
     glass: new THREE.MeshBasicMaterial({
       color: 0x000000,
       combine: THREE.MixOperation,
-      reflectivity: 0.85,
+      reflectivity: 0.5,
       transparent: true,
-      opacity: 0.42,
+      opacity: 0.2,
       depthWrite: false,
       side: THREE.DoubleSide,
     }),
