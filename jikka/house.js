@@ -351,7 +351,18 @@ const buildMain = (c) => {
   wall('x', 8.19, 0, 0.91, 'plaster')
   wall('x', 8.19, 0.91, 4.55, 'shoji', [[2.75, 3.62]])
   wall('x', 8.19, 4.55, 8.19, 'shoji', [[6.4, 7.28]])
-  W.inner({ axis: 'x', at: -4.1, from: 4.55, to: 8.19, y0: WASH, y1: CEIL, kind: 'plaster' })
+  // 玄関の部屋と洗面所の境。東の端に、洗面所へ下りる戸口 (鴨居の高さは、玄関の部屋の床から測る)
+  W.inner({
+    axis: 'x',
+    at: -4.1,
+    from: 4.55,
+    to: 8.19,
+    y0: WASH,
+    y1: CEIL,
+    kind: 'plaster',
+    head: FLOOR + 1.8 - WASH,
+    doors: [[7.3, 8.15]],
+  })
   // 南北に走る壁 (x が一定)
   wall('z', 0, 0, 4.55, 'fusuma', [[1.82, 2.73]])
   wall('z', 0, -5.46, 0, 'plaster', [[-1.4, -0.5]])
@@ -424,12 +435,15 @@ const buildMain = (c) => {
   box(b, mats.white, cx0 + 0.2, cx0 + 0.32, FLOOR + 0.85, FLOOR + 0.95, cz0 + 0.2, cz0 + 0.55)
   box(b, mats.white, cx0 + 0.2, cx0 + 0.32, FLOOR + 1.32, FLOOR + 1.4, cz1 - 0.6, cz1 - 0.2)
   table(c, mats.furniture, 1.8, 2.6, -3.4, -2.2, FLOOR, FLOOR + 0.72)
-  // 玄関。上がった所の北の壁に、端から端まで渡した一枚棚。緑の電話が乗っている。土間に下駄箱
-  box(b, mats.furniture, 4.6, 8.12, FLOOR + 1.05, FLOOR + 1.08, -4.05, -3.72)
-  ;[4.9, 6.37, 7.85].forEach((x) =>
+  // 玄関。上がった所の北の壁に、西の端から洗面所への戸口まで渡した一枚棚。緑の電話が乗っている。土間に下駄箱
+  box(b, mats.furniture, 4.6, 7.2, FLOOR + 1.05, FLOOR + 1.08, -4.05, -3.72)
+  ;[4.9, 6.05, 6.95].forEach((x) =>
     box(b, mats.furniture, x - 0.02, x + 0.02, FLOOR + 0.85, FLOOR + 1.05, -4.05, -3.85),
   )
-  W.rect(4.6, 8.12, -4.05, -3.72)
+  W.rect(4.6, 7.2, -4.05, -3.72)
+  // 玄関の部屋から洗面所へ下りる戸口の、踏み台
+  box(b, mats.doma, 7.3, 8.15, WASH, 0.3, -4.5, -4.15)
+  c.floors.push({ x0: 7.3, x1: 8.15, z0: -4.5, z1: -4.1, h: 0.3, s: 'hard' })
   phone(c, 6.0, FLOOR + 1.08, -3.9)
   thing(c, mats.furniture, 9.16, 10.24, 0.18, 1.05, -3.57, -3.25)
   // 洗面所 (歯をみがく所)。台所より低く、ほぼ外と同じ高さ。流しと鏡
