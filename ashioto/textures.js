@@ -659,6 +659,198 @@ export const nameSignTexture = () =>
   })
 
 /**
+ * 紙を1枚、少し傾けて描く。影と、上の画びょうも付ける
+ * @param draw - 紙の左上を原点にして、中身を描く関数 (ctx, w, h)
+ */
+const pinned = (ctx, x, y, w, h, angle, color, draw) => {
+  ctx.save()
+  ctx.translate(x + w / 2, y + h / 2)
+  ctx.rotate(angle)
+  ctx.translate(-w / 2, -h / 2)
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.35)'
+  ctx.fillRect(4, 5, w, h)
+  ctx.fillStyle = color
+  ctx.fillRect(0, 0, w, h)
+  const age = ctx.createLinearGradient(0, 0, w, h)
+  age.addColorStop(0, 'rgba(150, 120, 60, 0.06)')
+  age.addColorStop(1, 'rgba(120, 90, 40, 0.2)')
+  ctx.fillStyle = age
+  ctx.fillRect(0, 0, w, h)
+  draw(ctx, w, h)
+  ctx.fillStyle = '#b8261c'
+  ctx.beginPath()
+  ctx.arc(w / 2, 10, 6, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+}
+
+/**
+ * 左寄せで1行ずつ書く
+ */
+const lines = (ctx, list, x, y, gap, font, color) => {
+  ctx.font = font
+  ctx.fillStyle = color
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'middle'
+  list.forEach((line, i) => ctx.fillText(line, x, y + i * gap))
+}
+
+/**
+ * 防犯カメラの画像。暗い通路に、顔の無い人が立っている。ざらつきと日時の表示つき
+ */
+const cctvStill = (ctx, x, y, w, h) => {
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(x, y, w, h)
+  ctx.clip()
+  const bg = ctx.createLinearGradient(x, y, x, y + h)
+  bg.addColorStop(0, '#3b3f3c')
+  bg.addColorStop(1, '#1e201f')
+  ctx.fillStyle = bg
+  ctx.fillRect(x, y, w, h)
+  ctx.fillStyle = 'rgba(160, 165, 155, 0.18)'
+  ctx.fillRect(x, y + h * 0.72, w, h * 0.28)
+  const cx = x + w * 0.54
+  ctx.fillStyle = '#0c0c0d'
+  ctx.beginPath()
+  ctx.moveTo(cx - w * 0.2, y + h)
+  ctx.quadraticCurveTo(cx - w * 0.2, y + h * 0.5, cx, y + h * 0.48)
+  ctx.quadraticCurveTo(cx + w * 0.2, y + h * 0.5, cx + w * 0.2, y + h)
+  ctx.fill()
+  ctx.fillStyle = '#a9a39a'
+  ctx.beginPath()
+  ctx.ellipse(cx, y + h * 0.36, w * 0.075, h * 0.1, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.fillStyle = '#0c0c0d'
+  ctx.beginPath()
+  ctx.ellipse(cx, y + h * 0.3, w * 0.082, h * 0.07, 0, Math.PI, Math.PI * 2)
+  ctx.fill()
+  for (let i = 0; i < 2600; i++) {
+    ctx.fillStyle = `rgba(255, 255, 255, ${Math.random() * 0.12})`
+    ctx.fillRect(x + Math.random() * w, y + Math.random() * h, 1.5, 1.5)
+  }
+  for (let yy = y; yy < y + h; yy += 3) {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.12)'
+    ctx.fillRect(x, yy, w, 1)
+  }
+  ctx.font = `600 13px ${GOTHIC}`
+  ctx.fillStyle = 'rgba(235, 235, 225, 0.85)'
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'top'
+  ctx.fillText('CAM 03  2026/11/09 23:41', x + 8, y + 7)
+  ctx.restore()
+}
+
+/**
+ * 指名手配の紙。名前も年齢も分からず、写真は防犯カメラの画像。駅の交番の前にも、同じものが貼ってある
+ */
+export const wantedPosterTexture = () =>
+  canvasTexture(512, 724, (ctx, w, h) => {
+    ctx.fillStyle = '#efece3'
+    ctx.fillRect(0, 0, w, h)
+    stains(ctx, w, h, 5, '150, 120, 60', 0.2)
+    centerText(ctx, '指名手配', w / 2, 70, `800 78px ${GOTHIC}`, '#c01e14')
+    centerText(ctx, 'この人物を探しています', w / 2, 136, `700 26px ${GOTHIC}`, '#222')
+    cctvStill(ctx, 46, 168, w - 92, 300)
+    centerText(ctx, '防犯カメラの画像', w / 2, 484, `500 17px ${GOTHIC}`, '#555')
+    lines(
+      ctx,
+      [
+        '氏名・年齢　不詳',
+        '黒っぽい服装　身長170cm前後',
+        '夜間、駅とその周辺で',
+        '目撃されています',
+      ],
+      52,
+      528,
+      34,
+      `700 23px ${GOTHIC}`,
+      '#222',
+    )
+    ctx.fillStyle = '#1f3d7a'
+    ctx.fillRect(0, h - 74, w, 74)
+    centerText(ctx, '見かけた方は 110番 へ', w / 2, h - 37, `800 30px ${GOTHIC}`, '#ffffff')
+  })
+
+/**
+ * 町内会の掲示板の板。緑のフェルトに、お知らせの紙が何枚か。右側は指名手配の紙を重ねて貼る場所
+ */
+export const communityBoardTexture = () =>
+  canvasTexture(1024, 600, (ctx, w, h) => {
+    ctx.fillStyle = '#3c5243'
+    ctx.fillRect(0, 0, w, h)
+    speckle(ctx, w, h, 6000, ['rgba(255, 255, 255, 0.05)', 'rgba(0, 0, 0, 0.12)'], 2)
+    stains(ctx, w, h, 6, '20, 25, 20', 0.3)
+    pinned(ctx, 40, 40, 300, 240, -0.02, '#f2efe6', (c, pw) => {
+      centerText(c, '資源回収のお知らせ', pw / 2, 46, `800 26px ${GOTHIC}`, '#1d5a2e')
+      lines(
+        c,
+        [
+          '11月の資源回収は',
+          '第3日曜日 朝8時まで',
+          '新聞・雑誌・段ボールを',
+          'ひもでしばって出してください',
+        ],
+        24,
+        96,
+        34,
+        `600 19px ${GOTHIC}`,
+        '#2a2a28',
+      )
+      centerText(c, '月見台三丁目 町内会', pw / 2, 222, `500 15px ${GOTHIC}`, '#555')
+    })
+    pinned(ctx, 52, 318, 290, 250, 0.03, '#fbf3d5', (c, pw) => {
+      centerText(c, '秋の防災訓練', pw / 2, 46, `800 28px ${GOTHIC}`, '#b3401c')
+      lines(
+        c,
+        ['11月23日 (祝) 午前10時', '集合　月見台公園', '消火器の使い方を', '体験できます'],
+        26,
+        100,
+        34,
+        `600 19px ${GOTHIC}`,
+        '#2a2a28',
+      )
+    })
+    pinned(ctx, 380, 70, 250, 330, 0.04, '#ffffff', (c, pw) => {
+      centerText(c, '猫を探しています', pw / 2, 40, `800 25px ${GOTHIC}`, '#222')
+      c.fillStyle = '#d8d2c6'
+      c.fillRect(30, 70, pw - 60, 140)
+      c.fillStyle = '#c98f4d'
+      c.beginPath()
+      c.ellipse(pw / 2, 160, 52, 36, 0, 0, Math.PI * 2)
+      c.ellipse(pw / 2 - 30, 118, 26, 24, 0, 0, Math.PI * 2)
+      c.fill()
+      c.beginPath()
+      c.moveTo(pw / 2 - 50, 104)
+      c.lineTo(pw / 2 - 44, 84)
+      c.lineTo(pw / 2 - 34, 100)
+      c.moveTo(pw / 2 - 26, 98)
+      c.lineTo(pw / 2 - 14, 82)
+      c.lineTo(pw / 2 - 10, 102)
+      c.fill()
+      lines(
+        c,
+        ['茶トラのオス (10歳)', '11月はじめから', '帰ってきません', '見かけた方はご連絡を'],
+        26,
+        236,
+        24,
+        `600 16px ${GOTHIC}`,
+        '#2a2a28',
+      )
+    })
+  })
+
+/**
+ * 掲示板の上の名札
+ */
+export const boardHeaderTexture = () =>
+  canvasTexture(512, 64, (ctx, w, h) => {
+    ctx.fillStyle = '#e9e6dc'
+    ctx.fillRect(0, 0, w, h)
+    centerText(ctx, '月見台三丁目 町内会 掲示板', w / 2, h / 2 + 2, `700 30px ${GOTHIC}`, '#2a3a2e')
+  })
+
+/**
  * 白地に黒い文字の貼り紙。行ごとに書く。行が多い時は、紙に収まるように行の間を詰める
  */
 export const signTexture = (lines, w = 256, h = 320) =>

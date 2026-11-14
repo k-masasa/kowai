@@ -4,10 +4,12 @@ import {
   asphaltTexture,
   binTexture,
   blockTexture,
+  boardHeaderTexture,
   ceilingTexture,
   clockFace,
   clothTexture,
   coinPanelTexture,
+  communityBoardTexture,
   corrugatedTexture,
   concreteTexture,
   doorLeafTexture,
@@ -36,6 +38,7 @@ import {
   tileTexture,
   vendingAdTexture,
   vendingTexture,
+  wantedPosterTexture,
   waterStainTexture,
   wallTexture,
   wireGlassTexture,
@@ -430,6 +433,10 @@ export const buildBuilding = (scene) => {
       roughness: 0.4,
     }),
     tubeGlow: new THREE.MeshBasicMaterial({ color: 0xeef4ff }),
+    boardFrame: new THREE.MeshStandardMaterial({ color: 0x2d4636, roughness: 0.6, metalness: 0.2 }),
+    board: new THREE.MeshStandardMaterial({ map: communityBoardTexture(), roughness: 0.95 }),
+    boardHeader: new THREE.MeshStandardMaterial({ map: boardHeaderTexture(), roughness: 0.6 }),
+    wanted: new THREE.MeshStandardMaterial({ map: wantedPosterTexture(), roughness: 0.75 }),
     liftWall: new THREE.MeshStandardMaterial({ color: 0x9da2a6, roughness: 0.35, metalness: 0.6 }),
     streak: new THREE.MeshStandardMaterial({
       map: streakTexture(),
@@ -805,6 +812,29 @@ export const buildBuilding = (scene) => {
     box(b, mat.binBody, x, x + 0.42, 0.08, 0.95, 0.5, 0.9)
     b.add(new THREE.PlaneGeometry(0.42, 0.84), label, at(x + 0.21, 0.515, 0.902))
   })
+
+  // 町内会の掲示板。駐輪場の前の道ばたに立っていて、お知らせにまぎれて指名手配の紙が貼ってある
+  const nb0 = -6.45
+  const nb1 = -4.85
+  const nbz = 0.82
+  const nbx = (nb0 + nb1) / 2
+  ;[nb0 + 0.06, nb1 - 0.06].forEach((x) => {
+    box(b, mat.post, x - 0.03, x + 0.03, 0, 1.98, nbz - 0.03, nbz + 0.03)
+  })
+  box(b, mat.boardFrame, nb0, nb1, 0.9, 1.88, nbz + 0.03, nbz + 0.07)
+  b.add(new THREE.PlaneGeometry(nb1 - nb0 - 0.08, 0.86), mat.board, at(nbx, 1.37, nbz + 0.072))
+  b.add(new THREE.PlaneGeometry(0.74, 0.092), mat.boardHeader, at(nbx, 1.925, nbz + 0.05))
+  box(b, mat.boardFrame, nb0, nb1, 1.88, 1.97, nbz + 0.02, nbz + 0.07)
+  b.add(
+    new THREE.BoxGeometry(nb1 - nb0 + 0.16, 0.025, 0.32),
+    mat.boardFrame,
+    at(nbx, 2.0, nbz + 0.13, 0.3),
+  )
+  b.add(
+    new THREE.PlaneGeometry(0.33, 0.47),
+    mat.wanted,
+    at(nb1 - 0.3, 1.36, nbz + 0.076, 0, 0, -0.025),
+  )
 
   // 駐輪場。古いトタンの屋根と鉄の柱。中に自転車が並び、蛍光灯がときどきちらつく
   const roofY = (z) => 2.45 - ((z + 3.7) / 4.3) * 0.25
