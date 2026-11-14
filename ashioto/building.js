@@ -142,6 +142,19 @@ export const descentPath = (f, east = false) => {
 }
 
 /**
+ * 階段室の中で、点 a から点 b が見えるか (見えなければ true)。上りと折り返しの列のあいだの仕切り壁と、
+ * 1階分より離れた高さのあいだの床を、さえぎる物として数える
+ */
+export const stairBlocked = (a, b) => {
+  if (Math.abs(a.y - b.y) > 2.6) return true
+  const east = a.x > (SX1 + CX1) / 2
+  const wall = stairX((DIV0 + DIV1) / 2, east)
+  if ((a.x - wall) * (b.x - wall) >= 0) return false
+  const z = a.z + ((b.z - a.z) * (wall - a.x)) / (b.x - a.x)
+  return z > MID_Z && z < LAND_Z
+}
+
+/**
  * f 階で、片方の階段室の踊り場から、廊下を通って、もう片方の階段室の踊り場まで歩く道すじ
  * @param east - 東の階段室から歩き出すなら true
  */

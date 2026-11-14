@@ -15,6 +15,7 @@ import {
   flightTop,
   floorY,
   landingSpot,
+  stairBlocked,
   stairX,
 } from './building.js'
 import { createLightPool } from './lights.js'
@@ -186,6 +187,16 @@ const dayState = () => ({
   vendFor: 0,
   walker: null,
   walkerIn: 0,
+  // その日に階段に出した人の数
+  walkers: 0,
+  // 建物の中で歩いた道すじ ({ x, y, z, at } の並び。at は歩き始めからの道のり) と、その長さ。
+  // うしろからついてくる人や、追いかけてくる人は、これをたどる
+  trail: [],
+  trailLen: 0,
+  // うしろからついてくる人。もう出したか。階段で追いかけられている間は true (鈴の音を数えない)
+  follow: null,
+  followDone: false,
+  hunted: false,
   lampFig: null,
   dropped: false,
   roofTime: 0,
@@ -1221,7 +1232,8 @@ const updateTrip = (dt) => {
 
 /**
  * 階段の異変を、ばらばらの階に割り当てる。赤い表示の階 (振り返ると死ぬ)、明かりの消えた区間 (止まると死ぬ)、
- * 上の踊り場で探す人 (走ると死ぬ) から、1日目は2つ、2日目からは3つ。ほかに、表示の消えた階が1つ
+ * 上の踊り場で探す人 (走ると死ぬ) から、1日目は2つ、2日目からは3つ。ほかに、うしろからついてくる人 (止まると
+ * 近づいてくる) と、表示の消えた階が1つずつ
  */
 const planOddities = () => {
   const taken = new Set([
@@ -1230,16 +1242,22 @@ const planOddities = () => {
     S.cross,
     S.cross + 1,
   ])
-  const pick = () => {
-    let f = 0
-    do {
-      f = 3 + Math.floor(Math.random() * (FLOORS - 5))
-    } while (taken.has(f))
-    ;[f - 1, f, f + 1].forEach((n) => taken.add(n))
+  // 空いている階から選ぶ。extra は、その階から上に、あと何階分を使うか。空きが無ければ、重なってもよい
+  const pick = (extra = 0) => {
+    const free = []
+    for (let f = 3; f <= FLOORS - 3; f++) {
+      if (!taken.has(f) && !taken.has(f + extra)) free.push(f)
+    }
+    const f =
+      free.length > 0
+        ? free[Math.floor(Math.random() * free.length)]
+        : 3 + Math.floor(Math.random() * (FLOORS - 5))
+    for (let n = f - 1; n <= f + 1 + extra; n++) taken.add(n)
     return f
   }
   const kinds = ['red', 'dark', 'search'].sort(() => Math.random() - 0.5)
-  const plan = {}
+  // うしろからついてくる人は、毎日出す。2階分ついてくる
+  const plan = { follow: pick(1) }
   kinds.slice(0, S.day >= 2 ? 3 : 2).forEach((kind) => {
     plan[kind] = pick()
   })
@@ -1365,6 +1383,123 @@ const updateStairOddities = (dt) => {
     S.stillFor = 0
   }
   updateSeeker(f, dt)
+}
+
+const followAt = new THREE.Vector3()
+const followHead = new THREE.Vector3()
+
+/**
+ * うしろからついてくる人を出す。歩いてきた道すじの、ちょうど1つ下の階段くらいうしろに立たせる。
+ * 黒い服で、顔は白く、手足を動かさずにすべるように歩く
+ */
+const startFollower = () => {
+  const m = crowd.take('follow')
+  if (!m) return
+  const along = Math.max(0, S.trailLen - 5.5)
+  trailAt(along, followAt)
+  crowd.put(m, scene, followAt.x, followAt.y, followAt.z, 0, 'stand', 3, false)
+  m.p.dress(3, true)
+  m.p.blank(true)
+  S.follow = {
+    m,
+    along,
+    gap: S.trailLen - along,
+    still: 0,
+    step: 0,
+    t: 0,
+    until: stairFloor() + 2,
+    stopped: false,
+    gone: 0,
+  }
+}
+
+/**
+ * うしろからついてくる人を消す
+ */
+const endFollower = () => {
+  crowd.release(S.follow.m)
+  S.follow = null
+  S.followDone = true
+}
+
+/**
+ * うしろからついてきた人に、追いつかれた。振り向かせて、目の前に顔を出す
+ */
+const followDeath = () => {
+  const g = S.follow.m.p.group.position
+  S.yaw = Math.atan2(-(g.x - S.pos.x), -(g.z - S.pos.z))
+  S.pitch = 0.02
+  endFollower()
+  die('ずっと、うしろにいました。', 0.7)
+  faceToFace()
+}
+
+/**
+ * うしろからついてくる人の1フレーム分 (ふつう以上)。決めた階から上がり始めると、うしろに現れる。
+ * 歩いている間は、同じ道のりだけうしろを歩いてくる (走れば、走ってくる)。立ち止まると、そのまま近づいてくる。
+ * 引き返して近づいても、追いつかれる。2階分上がるか、廊下へ出ると立ち止まり、見ていない間にいなくなる
+ */
+const updateFollower = (dt) => {
+  const F = S.odd && S.odd.follow
+  if (!F || S.final) return
+  const fo = S.follow
+  if (!fo) {
+    if (S.followDone || S.tag !== `A${F}` || S.trailLen < 7) return
+    if (S.walker) hideWalker()
+    startFollower()
+    return
+  }
+  const g = fo.m.p.group
+  fo.t += dt
+  if (fo.t > 1.6 && !S.hinted.follow) {
+    S.hinted.follow = true
+    whisper('うしろから、だれか来る。')
+    sound.whisper()
+  }
+  if (!fo.stopped && (stairFloor() >= fo.until || /^[HCD]\d/.test(S.tag))) fo.stopped = true
+  followHead.copy(g.position)
+  followHead.y += 1.6
+  updateFrustum()
+  sphere.center.copy(followHead)
+  const seen = frustum.intersectsSphere(sphere) && !stairBlocked(eye, followHead)
+  if (fo.stopped) {
+    fo.gone += dt
+    g.rotation.y = Math.atan2(S.pos.x - g.position.x, S.pos.z - g.position.z)
+    if (!seen || fo.gone > 10) endFollower()
+    return
+  }
+  fo.still = S.walking ? 0 : fo.still + dt
+  let step = Math.max(0, Math.min(S.trailLen - fo.gap - fo.along, 2.5 * dt))
+  if (fo.still > 1.0) {
+    step = 0.75 * dt
+    if (!S.hinted.followStill) {
+      S.hinted.followStill = true
+      whisper('近づいてくる。')
+      sound.whisper()
+    }
+  }
+  step = Math.min(step, S.trailLen - fo.along)
+  fo.along += step
+  if (fo.still > 1.0) fo.gap = S.trailLen - fo.along
+  trailAt(fo.along, g.position)
+  // 進む向きを向く。止まっている時は、こちらを向く
+  if (step > 0.0001) {
+    trailAt(fo.along + 0.4, followAt)
+    g.rotation.y = Math.atan2(followAt.x - g.position.x, followAt.z - g.position.z)
+  } else {
+    g.rotation.y = Math.atan2(S.pos.x - g.position.x, S.pos.z - g.position.z)
+  }
+  fo.step += step
+  if (fo.step > 0.68) {
+    fo.step = 0
+    const d = followHead.distanceTo(eye)
+    const dy = Math.abs(g.position.y - S.feet)
+    sound.step(THREE.MathUtils.clamp(1.6 / (1 + d), 0.05, 0.5), {
+      muffle: THREE.MathUtils.clamp((dy - 1) * 0.3, 0, 0.6),
+    })
+  }
+  const close = Math.hypot(g.position.x - S.pos.x, g.position.y - S.feet, g.position.z - S.pos.z)
+  if (S.trailLen - fo.along < 1.0 || close < 0.8) followDeath()
 }
 
 /**
@@ -1572,6 +1707,10 @@ const onStairs = () => {
   // 上の階に着いた瞬間に、そっくりな下の階へ移す
   const f = S.loopFloor
   S.feet -= FH
+  S.trail.forEach((p) => {
+    p.y -= FH
+  })
+  if (S.follow) S.follow.m.p.group.position.y -= FH
   if (S.ahead) figure.group.position.y -= FH
   if (S.walker) {
     S.walker.path.forEach((p) => {
@@ -1665,7 +1804,7 @@ const ringBell = () => {
  * 鳴らしすぎると、心臓の音が速くなる。最後の追いかけでは数えない。かんたんでは、知らせるだけで死なない
  */
 const updateNoise = (dt) => {
-  if (!S.bell || S.final) return
+  if (!S.bell || S.final || S.hunted) return
   const loud = S.running && S.walking
   S.noise = loud ? S.noise + dt : Math.max(0, S.noise - dt * 0.5)
   if (S.noise < 2) return
@@ -2009,8 +2148,54 @@ const move = (dt) => {
   }
   walkSounds(flat(before, S.pos))
   trackDown(S.feet - feet)
+  recordTrail()
   if (S.mode !== 'play') return
   onPlace()
+}
+
+/**
+ * 建物の中で歩いた道すじを、0.2m ごとに残す。古い方から捨てて、100m 分くらいを持つ
+ */
+const recordTrail = () => {
+  if (!S.inside) return
+  const t = S.trail
+  const last = t[t.length - 1]
+  const d = last ? Math.hypot(S.pos.x - last.x, S.pos.z - last.z) : 0
+  if (last && d < 0.2) return
+  S.trailLen += d
+  t.push({ x: S.pos.x, y: S.feet, z: S.pos.z, at: S.trailLen })
+  if (t.length > 500) t.shift()
+}
+
+/**
+ * 歩いた道すじの、道のり at の場所を out に入れる。道すじの外なら、端の場所
+ */
+const trailAt = (at, out) => {
+  const t = S.trail
+  if (t.length === 0) return out.set(S.pos.x, S.feet, S.pos.z)
+  for (let i = t.length - 1; i > 0; i--) {
+    const a = t[i - 1]
+    if (a.at > at) continue
+    const b = t[i]
+    const k = Math.min(1, (at - a.at) / Math.max(b.at - a.at, 0.0001))
+    return out.set(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, a.z + (b.z - a.z) * k)
+  }
+  return out.set(t[0].x, t[0].y, t[0].z)
+}
+
+/**
+ * 歩いた道すじのうち、p にいちばん近い所の道のり
+ */
+const trailNear = (p) => {
+  let best = S.trailLen
+  let bestD = Infinity
+  S.trail.forEach((q) => {
+    const d = Math.hypot(q.x - p.x, (q.y - p.y) * 1.5, q.z - p.z)
+    if (d >= bestD) return
+    bestD = d
+    best = q.at
+  })
+  return best
 }
 
 const frustum = new THREE.Frustum()
@@ -2450,23 +2635,27 @@ const homePath = (from, f, unit) => {
 }
 
 /**
- * 階段に、人を1人出す。2階上から下りて外へ出ていく人と、2階下から上がって1つ下の階の部屋に帰る人がいる。
- * 下りてくる人の一部は、おかしな人
- * @param force - 確かめる時だけ使う。{ strange, up } で出し方を決める
+ * 階段に、人を1人出す。4階上から下りて外へ出ていく人と、2階下から上がって1つ下の階の部屋に帰る人がいる。
+ * 下りてくる人の一部は、おかしな人。ふつうの顔の人の一部は、こちらをじっと見てくる人 (watch)
+ * @param force - 確かめる時だけ使う。{ strange, up, mimic, watch } で出し方を決める
  */
 const spawnWalker = (force = {}) => {
   const pf = Math.max(1, stairFloor())
   // いる方の階段に出す。上がってくる人は、2階下から同じ階段で上がってこられる時だけ。
-  // 下りてくる人は、西の階段なら、ふさいである階より上からは来ない
+  // 下りてくる人は、足音が長く聞こえるように、4階上から。西の階段なら、ふさいである階より上からは来ない
   const east = S.pos.x > (HX1 + CX1) / 2
   const upOk = east ? pf - 2 >= S.cross : pf >= 3
-  const from = Math.min(east ? FLOORS : S.cross, pf + 2)
-  const up = upOk && (force.up ?? (from <= pf || Math.random() < 0.35))
+  const from = Math.min(east ? FLOORS : S.cross, pf + 4)
+  const up = upOk && (force.up ?? (from <= pf || Math.random() < 0.3))
   if (!up && from <= pf) return
+  S.walkers += 1
+  // 2人目に下りてくる人は、じっと見てくる人にする
+  const watchTurn = !up && S.walkers === 2
   const chance = Math.min(0.7, 0.25 + 0.12 * (S.day - 1) + 0.08 * S.loops)
-  const strange = !up && (force.strange ?? Math.random() < chance)
+  const strange = !up && !watchTurn && !force.watch && (force.strange ?? Math.random() < chance)
   // 2日目からは、おかしな人の半分が、顔があってあいさつもする。足音だけがしない
   const mimic = strange && (force.mimic ?? (S.day >= 2 && Math.random() < 0.5))
+  const watch = !up && !strange && (force.watch ?? (watchTurn || Math.random() < 0.2))
   const unit = Math.floor(Math.random() * UNITS)
   const path = up ? homePath(pf - 2, pf - 1, unit) : exitPath(from)
   S.walker = {
@@ -2484,8 +2673,14 @@ const spawnWalker = (force = {}) => {
     look: 0,
     greeted: false,
     mimic,
+    watch,
+    minD: Infinity,
+    pale: 0,
+    watchFor: 0,
   }
-  person.dress(Math.floor(Math.random() * 6), strange && !mimic)
+  // じっと見てくる人は、スマホを持たない (首がこちらを向く)
+  const seed = watch ? 1 + 2 * Math.floor(Math.random() * 3) : Math.floor(Math.random() * 6)
+  person.dress(seed, strange && !mimic)
   person.group.position.copy(path[0])
   person.group.visible = true
 }
@@ -2496,6 +2691,7 @@ const spawnWalker = (force = {}) => {
 const hideWalker = () => {
   person.group.visible = false
   S.walker = null
+  S.hunted = false
 }
 
 /**
@@ -2564,15 +2760,137 @@ const stareWalker = (dt, d) => {
   if ((w.stare > 2.6 && w.look < 0.2) || d > 3.4) vanishWalker()
 }
 
+const walkerAhead = new THREE.Vector3()
+
 /**
- * 階段ですれ違う人の1フレーム分。ふつう以上で、階段にいる間だけ出てくる
+ * すれ違う人の首を、こちらへ向ける。体の向きはそのままで、首だけ回して、見上げる / 見下ろす
+ * @param k - 向く速さ
+ */
+const turnHeadToPlayer = (dt, k) => {
+  const g = person.group
+  const yaw = Math.atan2(S.pos.x - g.position.x, S.pos.z - g.position.z)
+  const turn = THREE.MathUtils.clamp(
+    Math.atan2(Math.sin(yaw - g.rotation.y), Math.cos(yaw - g.rotation.y)),
+    -1.2,
+    1.2,
+  )
+  const across = Math.max(0.3, Math.hypot(S.pos.x - g.position.x, S.pos.z - g.position.z))
+  const tilt = THREE.MathUtils.clamp(-Math.atan2(eye.y - headPoint.y, across), -0.7, 0.6)
+  const h = person.head.rotation
+  const s = 1 - Math.exp(-k * dt)
+  h.y += (turn - h.y) * s
+  h.x += (tilt - h.x) * s
+}
+
+/**
+ * じっと見てくる人と、目を合わせすぎた。顔の真っ白な人が、目の前にいる
+ */
+const watcherDeath = () => {
+  const g = person.group
+  S.hunted = false
+  S.walker = null
+  S.yaw = Math.atan2(-(g.position.x - S.pos.x), -(g.position.z - S.pos.z))
+  S.pitch = 0.02
+  g.position.set(S.pos.x - Math.sin(S.yaw) * 0.42, S.feet, S.pos.z - Math.cos(S.yaw) * 0.42)
+  person.face(S.pos)
+  person.fade(1)
+  person.head.rotation.set(0, 0, 0.25)
+  sound.scare()
+  die('ずっと、目が合っていましたね。', 0.7)
+}
+
+/**
+ * すれ違ったあとに立ち止まって、こちらをじっと見ている間。見ているうちに、顔がだんだん白くなる。
+ * 目を合わせ続けると、追いかけてくる。目をそらして離れれば、見ていない間にいなくなる
+ */
+const watchWalker = (dt, d) => {
+  const w = S.walker
+  person.face(S.pos)
+  turnHeadToPlayer(dt, 6)
+  updateFrustum()
+  sphere.center.copy(headPoint)
+  const seen = frustum.intersectsSphere(sphere) && !stairBlocked(eye, headPoint)
+  const looking = seen && d < 12 && lookingAt(headPoint, 0.3)
+  w.look = looking ? w.look + dt : Math.max(0, w.look - dt * 0.4)
+  w.pale = Math.min(1, w.pale + dt * (looking ? 0.42 : 0.05))
+  person.fade(w.pale)
+  w.watchFor += dt
+  if (looking && w.look > 0.7 && !S.hinted.watch) {
+    S.hinted.watch = true
+    whisper('目を、そらして。')
+    sound.whisper()
+  }
+  if (w.look > 2.4) {
+    // 追いかけてくる。こちらの歩いた道すじを、走ってたどる
+    w.mode = 'chase'
+    w.along = trailNear(person.group.position)
+    w.chaseFor = 0
+    w.stepLen = 0
+    // 走り出す前に、首をかしげて、少しだけ間がある
+    w.windup = 0.7
+    person.fade(1)
+    S.hunted = true
+    sound.whisper()
+    sound.heartbeat(0.6)
+    return
+  }
+  if (!seen && (d > 10 || w.watchFor > 25)) hideWalker()
+}
+
+/**
+ * じっと見てくる人が、追いかけてくる間。首をかしげた少しの間のあと、走ってくる。
+ * 歩くより速く、走るより少し遅い。5秒逃げきれば、消える
+ */
+const chaseWalker = (dt, d) => {
+  const w = S.walker
+  const g = person.group
+  if (w.windup > 0) {
+    w.windup -= dt
+    person.face(S.pos)
+    person.head.rotation.set(-0.2, 0, 0.45)
+    return
+  }
+  w.chaseFor += dt
+  // 走り出しは、少しずつ速くなる
+  const speed = 1.9 * Math.min(1, 0.3 + w.chaseFor / 0.8)
+  const before = w.along
+  w.along = Math.min(S.trailLen, w.along + speed * dt)
+  trailAt(w.along, g.position)
+  trailAt(Math.min(S.trailLen, w.along + 0.4), walkerAhead)
+  if (Math.hypot(walkerAhead.x - g.position.x, walkerAhead.z - g.position.z) > 0.01) {
+    g.rotation.y = Math.atan2(walkerAhead.x - g.position.x, walkerAhead.z - g.position.z)
+  }
+  person.head.rotation.set(-0.15, 0, 0.3)
+  w.phase += (speed * dt) / 0.6
+  person.walk(w.phase)
+  w.stepLen += w.along - before
+  if (w.stepLen > 0.55) {
+    w.stepLen = 0
+    sound.step(THREE.MathUtils.clamp(2.2 / (1 + d), 0.12, 0.8), { muffle: 0.1 })
+  }
+  S.beatIn -= dt
+  if (S.beatIn <= 0) {
+    S.beatIn = 0.42
+    sound.heartbeat(0.55)
+  }
+  const close = Math.hypot(g.position.x - S.pos.x, g.position.y - S.feet, g.position.z - S.pos.z)
+  if (S.trailLen - w.along < 0.9 || close < 0.8) {
+    watcherDeath()
+    return
+  }
+  if (w.chaseFor > 5) vanishWalker()
+}
+
+/**
+ * 階段ですれ違う人の1フレーム分。ふつう以上で、階段にいる間だけ出てくる。
+ * うしろからついてくる人がいる間は、出さない
  */
 const updateWalker = (dt) => {
   if (!S.level.events || S.final || !S.inside) return
   const w = S.walker
   if (!w) {
     const pf = stairFloor()
-    if (!pf || pf >= FLOORS) return
+    if (!pf || pf >= FLOORS || S.follow) return
     S.walkerIn -= dt
     if (S.walkerIn > 0) return
     S.walkerIn = nextIn(WALKER_GAP)
@@ -2580,11 +2898,6 @@ const updateWalker = (dt) => {
     return
   }
   const g = person.group
-  // 2階分より離れたら、もう見えないので消す
-  if (Math.abs(g.position.y - S.feet) > FH * 2.2 && w.seg > 2) {
-    hideWalker()
-    return
-  }
   headPoint.copy(g.position)
   headPoint.y += 1.62
   const d = headPoint.distanceTo(eye)
@@ -2592,8 +2905,22 @@ const updateWalker = (dt) => {
     stareWalker(dt, d)
     return
   }
+  if (w.mode === 'watch') {
+    watchWalker(dt, d)
+    return
+  }
+  if (w.mode === 'chase') {
+    chaseWalker(dt, d)
+    return
+  }
+  // 下へ2階分より離れたか、上へ4階分より離れたら、もう見えないので消す
+  const rel = g.position.y - S.feet
+  if (w.seg > 2 && (rel < -FH * 2.2 || rel > FH * 4.6)) {
+    hideWalker()
+    return
+  }
   // 道すじに沿って歩く
-  const speed = w.strange ? 0.95 : 1.25
+  const speed = w.strange ? 0.95 : w.watch ? 1.1 : 1.25
   let left = speed * dt
   while (left > 0 && w.seg < w.path.length - 1) {
     const rest = w.path[w.seg].distanceTo(w.path[w.seg + 1]) - w.along
@@ -2633,6 +2960,17 @@ const updateWalker = (dt) => {
     w.lastStep = Math.floor(w.phase)
     const vol = THREE.MathUtils.clamp(1.4 / (1 + d), 0.03, 0.45)
     sound.step(vol, { muffle: THREE.MathUtils.clamp((dy - 1) * 0.3, 0, 0.7) })
+  }
+  // じっと見てくる人は、近づいてくる間ずっとこちらを見ていて、あいさつはしない。
+  // すれ違って、こちらより少し下まで下りたら、立ち止まって振り向く
+  if (w.watch) {
+    if (d < 9) turnHeadToPlayer(dt, 3)
+    w.minD = Math.min(w.minD, d)
+    if (w.minD < 3 && g.position.y < S.feet - 1.1) {
+      w.mode = 'watch'
+      person.walk(Math.round(w.phase))
+    }
+    return
   }
   if ((!w.strange || w.mimic) && !w.greeted && d < 2.4 && dy < 1.2 && lookingAt(headPoint, 0.6)) {
     w.greeted = true
@@ -2870,6 +3208,8 @@ const updatePlay = (dt) => {
   updateLampFigure(dt)
   updateOddities(dt)
   updateStairOddities(dt)
+  if (S.mode !== 'play') return
+  updateFollower(dt)
   updateLift(dt)
 }
 
@@ -3069,6 +3409,7 @@ if (import.meta.env.DEV) {
     home: () => goHome(),
     person,
     walker: (force) => spawnWalker(force),
+    follower: () => startFollower(),
     lamp: () => showLampFigure(),
     lift: (floor) => startLift(floor),
     renderer,

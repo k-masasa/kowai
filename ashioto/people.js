@@ -127,6 +127,8 @@ export const createPerson = ({ shadow = true } = {}) => {
 
   const head = new THREE.Group()
   head.position.y = 1.56
+  // 首は、左右に回してから、上下に傾ける
+  head.rotation.order = 'YXZ'
   group.add(head)
   const neck = part(new THREE.CylinderGeometry(0.045, 0.05, 0.12, 10), skin)
   neck.position.y = 1.52
@@ -137,6 +139,22 @@ export const createPerson = ({ shadow = true } = {}) => {
   hair.scale.set(0.93, 1.1, 0.98)
   hair.position.set(0, 0.08, -0.01)
   hair.rotation.x = -0.5
+  // 顔がだんだん白くなる時に、顔の上にかぶせる白い顔。透けぐあいで、白さを変える (fade)
+  const veil = new THREE.Mesh(
+    skull.geometry,
+    new THREE.MeshStandardMaterial({
+      color: 0xe9e5dc,
+      emissive: 0x4a4744,
+      roughness: 0.9,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+    }),
+  )
+  veil.scale.copy(skull.scale).multiplyScalar(1.02)
+  veil.position.copy(skull.position)
+  veil.visible = false
+  head.add(veil)
   // 腕は肩で回る。右手にスマホ、左手にかばんを持つことがある
   const arms = [-1, 1].map((side) => {
     const shoulder = new THREE.Group()
@@ -167,6 +185,7 @@ export const createPerson = ({ shadow = true } = {}) => {
     stiff = strange
     coat.color.setHex(strange ? 0x16171a : COATS[seed % COATS.length])
     skull.material = strange ? faces.plain : faces.face
+    veil.visible = false
     phone.visible = items && !strange && seed % 2 === 0
     bag.visible = items && !strange && seed % 2 === 1
     head.rotation.set(phone.visible ? 0.45 : 0, 0, strange ? 0.3 : 0)
@@ -221,6 +240,20 @@ export const createPerson = ({ shadow = true } = {}) => {
       return
     }
     skull.material = stiff ? faces.plain : faces.face
+  }
+
+  /**
+   * 顔を、少しずつ白くする。k は 0 (ふつうの顔) から 1 (目も口も無い、真っ白な顔)
+   */
+  const fade = (k) => {
+    if (k >= 1) {
+      veil.visible = false
+      blank(true)
+      return
+    }
+    blank(false)
+    veil.visible = k > 0.01
+    veil.material.opacity = k
   }
 
   /**
@@ -293,5 +326,5 @@ export const createPerson = ({ shadow = true } = {}) => {
     hiddenParts.length = 0
   }
 
-  return { group, head, dress, walk, face, sit, stand, blank, bake, unbake }
+  return { group, head, dress, walk, face, sit, stand, blank, fade, bake, unbake }
 }
