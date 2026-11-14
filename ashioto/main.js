@@ -184,6 +184,10 @@ const S = {
   checkpoint: false,
   from: 'office',
   locked: false,
+  // マウスのロックを頼んで、まだ返事が来ていない間は true
+  locking: false,
+  // 一度でもロックできたか。一度もできない所では、ドラッグで見回してもらう
+  lockedOnce: false,
   hum: 0,
   awayAt: 0,
   awayPending: false,
@@ -466,6 +470,7 @@ const fadeOut = (seconds) => {
  * マウスを画面にロックする。できなくても、ドラッグで見回せる
  */
 const lockPointer = () => {
+  S.locking = true
   const result = renderer.domElement.requestPointerLock?.()
   if (result?.catch) result.catch(() => {})
 }
@@ -853,7 +858,9 @@ const startDay = (n, from = 'office') => {
   if (S.level.events && Math.random() < 0.45 + 0.2 * (n - 1)) showLampFigure()
   const goal = n === 1 ? '20階の、2012号室に帰る。' : '今日も、2012号室に帰る。'
   setTimeout(() => whisper(goal, 4200), 1800)
-  if (S.locked && document.pointerLockElement !== renderer.domElement) pause()
+  // ロックを頼んでいる途中は止めない。止めると、ロックが効いた後のクリックは画面の方に行き、
+  // 「クリックで戻る」に届かなくなる
+  if (S.locked && !S.locking && document.pointerLockElement !== renderer.domElement) pause()
 }
 
 /**
@@ -2221,8 +2228,19 @@ document.addEventListener('mousemove', (e) => {
 })
 
 document.addEventListener('pointerlockchange', () => {
-  if (document.pointerLockElement) return
+  S.locking = false
+  if (document.pointerLockElement) {
+    S.lockedOnce = true
+    return
+  }
   if (S.mode === 'play' && S.locked) pause()
+})
+
+// ロックを断られた時。Chrome は、Esc で外した直後 (1.25秒) のロックを断る。
+// 一度ロックできていたなら、もう一度クリックしてもらう
+document.addEventListener('pointerlockerror', () => {
+  S.locking = false
+  if (S.mode === 'play' && S.locked && S.lockedOnce) pause()
 })
 
 document.addEventListener('visibilitychange', () => {
