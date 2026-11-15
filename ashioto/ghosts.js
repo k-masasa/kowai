@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
-// 人の形をしていない、お化け。這うもの (四つ足で這ってくる、細長いもの) と、廊下の腰壁をつかむ手
+// 人の形をしていない、お化け。這うもの (四つ足で這ってくる、細長いもの) と、よじ登る時に腰壁をつかむ手
 
 const UP = new THREE.Vector3(0, 1, 0)
 const A = new THREE.Vector3()
@@ -94,15 +94,21 @@ export const createCrawler = () => {
     l.hand.scale.set(1, 0.3, 1.8)
   })
 
+  // ひじとひざの曲げ方。外へ張り出す幅、上へ突き出す高さ、前へずらす長さ (体の中の座標)
+  const BEND = { side: 0.26, up: 0.42, ahead: 0 }
+
   /**
    * 手足を、手先 (足先) の場所に合わせて置き直す。ひじとひざは、外へ張り出して上へ突き出す
+   * @param front - 前の手足のひじの曲げ方。うしろ足は、いつも BEND
    */
-  const placeLimbs = () => {
-    limbs.forEach((l) => {
+  const placeLimbs = (front = BEND) => {
+    limbs.forEach((l, k) => {
+      const bend = k < 2 ? front : BEND
       const side = Math.sign(l.root.x)
       A.addVectors(l.root, l.at).multiplyScalar(0.5)
-      A.x += side * 0.26
-      A.y += 0.42
+      A.x += side * bend.side
+      A.y += bend.up
+      A.z += bend.ahead
       span(l.upper, l.root, A)
       span(l.lower, A, l.at)
       l.hand.position.copy(l.at)
@@ -168,12 +174,46 @@ export const createCrawler = () => {
   }
 
   /**
+   * 壁にしがみつく姿勢。腹側を壁に向けて、前の手先を grips の所に置き、うしろ足の先は壁に付ける。
+   * 前の手は隠す (腰壁をつかむ手は、createHand で別に置く)
+   * @param grips - 前の左右の手先の位置 (体の中の座標)
+   * @param wall - 壁の面の高さ (体の中の y)。腹のすぐ下に壁がある
+   */
+  const cling = (grips, wall) => {
+    body.rotation.x = 0
+    body.position.y = 0
+    limbs.forEach((l, k) => {
+      if (k < 2) {
+        l.at.copy(grips[k])
+      } else {
+        l.at.copy(l.foot)
+        l.at.y = wall
+      }
+      l.hand.visible = k >= 2
+    })
+    // 前のひじは、壁から離さずに、横へ張って下へ曲げる。腕が、腰壁のふちに引っかかる
+    placeLimbs({ side: 0.3, up: 0.1, ahead: -0.3 })
+  }
+
+  /**
+   * 首だけ曲げて、target (世界の座標) を見る
+   * @param tilt - 首をかしげる角度
+   */
+  const look = (target, tilt = 0) => {
+    head.lookAt(target)
+    head.rotateZ(tilt)
+  }
+
+  /**
    * 四つ足に戻す。口も戻す
    */
   const reset = () => {
     body.rotation.x = 0
     head.rotation.set(0.7, 0, 0)
     gape.scale.set(0.035, 0.06, 0.03)
+    limbs.forEach((l) => {
+      l.hand.visible = true
+    })
     crawl(0, 0)
   }
 
@@ -185,15 +225,15 @@ export const createCrawler = () => {
   }
 
   reset()
-  return { group, body, head, crawl, randomPose, scarePose, reset, face }
+  return { group, body, head, skin, crawl, randomPose, scarePose, cling, look, reset, face }
 }
 
 // 手の形は1つ作って、みんなで使う
 let handGeometry = null
 
 /**
- * 廊下の腰壁の上をつかむ手の形。原点は腰壁の上の外の角で、+z が外。指は内側 (-z) へ向けて、腰壁の上にかかる。
- * 腕は外へたれ下がる
+ * 廊下の腰壁の上をつかむ手の形。原点は腰壁の上の外の角 (手首) で、+z が外。指は内側 (-z) へ向けて、腰壁の上にかかる。
+ * 腕は付けない (這うものの前の手足が、手首につながる)
  */
 const buildHandGeometry = () => {
   const parts = []
@@ -223,17 +263,16 @@ const buildHandGeometry = () => {
       v(x, -0.035, -0.06 - len),
     )
   })
-  // 親指と、外へたれ下がる腕
+  // 親指
   add(new THREE.CapsuleGeometry(0.011, 1, 3, 6), v(0.045, 0.012, 0.0), v(0.055, 0.004, -0.06))
-  add(new THREE.CapsuleGeometry(0.032, 1, 4, 8), v(0, 0.0, 0.04), v(0.01, -0.6, 0.09))
   const merged = mergeGeometries(parts)
   merged.computeVertexNormals()
   return merged
 }
 
 /**
- * 廊下の腰壁をつかむ手を1つ作る。外から、だれかが腰壁にぶら下がっている
- * @param material - 肌のマテリアル (手はみんな同じ色)
+ * 廊下の腰壁をつかむ手を1つ作る。這うものが、外から腰壁をよじ登ってくる時の手
+ * @param material - 肌のマテリアル (這うものと同じ)
  */
 export const createHand = (material) => {
   if (!handGeometry) handGeometry = buildHandGeometry()

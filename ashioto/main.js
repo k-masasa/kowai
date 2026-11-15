@@ -394,18 +394,13 @@ scene.add(seeker.group)
 const crawler = createCrawler()
 crawler.group.visible = false
 scene.add(crawler.group)
-// 東の階段へ移る階の、廊下の腰壁を外からつかんでいる手。近づくと、手を放して下へ消える
-// 肌は、壁の色と見分けがつくように、青白く、少し光らせる
-const handSkin = new THREE.MeshStandardMaterial({
-  color: 0xdfe3dc,
-  emissive: 0x30332f,
-  roughness: 0.8,
-})
-const hands = Array.from({ length: 8 }, () => {
-  const mesh = createHand(handSkin)
+// 這うものが、東の階段へ移る階の腰壁を、外からよじ登ってくる時の手。0 が東 (右手)、1 が西 (左手)
+const hands = [-1, 1].map((side) => {
+  const mesh = createHand(crawler.skin)
+  mesh.scale.set(side * 1.6, 1.6, 1.6)
   mesh.visible = false
   scene.add(mesh)
-  return { mesh, drop: -1 }
+  return mesh
 })
 const sound = createSound()
 const homeDoor = building.doors.find((d) => d.home)
@@ -637,7 +632,9 @@ const resetWorld = () => {
   scene.add(figure.group)
   crawler.group.visible = false
   crawler.reset()
-  placeHands()
+  hands.forEach((h) => {
+    h.visible = false
+  })
   placeStart(S.from)
   closeLift()
   seeker.group.visible = false
@@ -2107,42 +2104,6 @@ const updateWrongWay = (dt) => {
 }
 
 /**
- * 東の階段へ移る階の廊下に、腰壁を外からつかんでいる手を置く。2本ずつ、間を空けて4組。少し大きい
- */
-const placeHands = () => {
-  const y = floorY(S.cross) + 1.15
-  let x = 11.5 + Math.random() * 1.5
-  hands.forEach((h, k) => {
-    h.mesh.position.set(x, y, 0.17)
-    h.mesh.rotation.set(0, (Math.random() - 0.5) * 0.4, 0)
-    // 2本のうち片方は、左手 (裏返す)
-    h.mesh.scale.set(k % 2 ? -1.3 : 1.3, 1.3, 1.3)
-    h.mesh.visible = true
-    h.drop = -1
-    x += k % 2 === 0 ? 0.4 + Math.random() * 0.2 : 2.2 + Math.random() * 1.6
-  })
-}
-
-/**
- * 腰壁をつかむ手。近づくと、手を放して下へ消える。前から這ってくるものが出たら、残りも全部放す
- */
-const updateHands = (dt) => {
-  const here = S.tag === `C${S.cross}`
-  hands.forEach((h) => {
-    if (!h.mesh.visible) return
-    if (h.drop < 0) {
-      const near = here && Math.abs(S.pos.x - h.mesh.position.x) < 2.8
-      if (!near && !S.crossChase) return
-      h.drop = 0
-      sound.step(0.1, { muffle: 0.75 })
-    }
-    h.drop += dt
-    h.mesh.position.y -= dt * 2.6
-    if (h.drop > 0.4) h.mesh.visible = false
-  })
-}
-
-/**
  * 道すじを1つ作る。start から始まり、あとで pathPush で点を足していく
  */
 const makePath = (start) => ({ pts: [{ x: start.x, y: start.y, z: start.z, at: 0 }], len: 0 })
@@ -2195,29 +2156,174 @@ const crawlSound = (d) => {
   sound.step(THREE.MathUtils.clamp(1.8 / (1 + d), 0.06, 0.6), { muffle: 0.15 })
 }
 
+// 腰壁をよじ登る這うものの、うしろ足のあいだ (体の原点) の高さ (その階の床から)。
+// 手をかけた時 (頭は腰壁の陰)、頭が腰壁から出た時、体を引き上げた時
+const CLIMB_LOW = -0.6
+const CLIMB_PEEK = 0.05
+const CLIMB_HAUL = 0.45
+// 腰壁の上の、外の角。手首を置く
+const RAIL_Z = 0.17
+// しがみつく時の体の原点の z。腹が腰壁の外の面に付いて、頭が腰壁のふちのすぐ上に出るように、内側に置く
+// (外へ離れると、手前の柱に隠れて見えない)
+const CLIMB_Z = -0.5
+const grips = [new THREE.Vector3(), new THREE.Vector3()]
+const climbSphere = new THREE.Sphere(new THREE.Vector3(), 0.6)
+
 /**
- * 東の階段へ移る階の廊下を、半分くらいまで来た。先の明かりがちらついて、その下に這うものがいる。その奥は暗い
+ * 這うものを、腰壁の外にしがみつかせる。腹を壁に向けて、頭を上にする。前の手足の先は、腰壁の上の手の手首
+ * @param lift - 体の原点の高さ (その階の床から)
+ */
+const cling = (x, lift) => {
+  const y = floorY(S.cross) + lift
+  const g = crawler.group
+  g.position.set(x, y, CLIMB_Z)
+  g.rotation.set(-Math.PI / 2, Math.PI, 0)
+  // 手首を、体の中の座標に直す。この向きでは、左右が逆、外へ向かうのが y、上が z になる
+  hands.forEach((h, k) => {
+    grips[k].set(x - h.position.x, h.position.z - CLIMB_Z, h.position.y - y)
+  })
+  crawler.cling(grips, RAIL_Z + 0.03 - CLIMB_Z)
+}
+
+/**
+ * 腰壁の上に、手を1本かける。ぺたっと鳴る
+ * @param k - 0 が東、1 が西
+ */
+const gripHand = (k) => {
+  const h = hands[k]
+  h.position.set(S.crossChase.x + (k === 0 ? 0.3 : -0.3), floorY(S.cross) + 1.15, RAIL_Z)
+  h.rotation.set(0, (Math.random() - 0.5) * 0.3, 0)
+  h.visible = true
+  sound.step(0.32, { muffle: 0.1 })
+}
+
+/**
+ * 東の階段へ移る階の廊下を、半分くらいまで来た。先の明かりがちらついて、その下の腰壁を、外から這うものがよじ登ってくる。
+ * その奥の明かりは、もう消えている
  */
 const startCrossChase = () => {
   if (S.walker) hideWalker()
-  // 10m ほど先の明かりの下に出す。その先の明かりは、もう消えている
+  // 8m ほど先の明かりの下。柱のすぐ奥だと、手前から見て柱に隠れるので、すぐ先に柱がある明かり (番号が奇数) を選ぶ
   const lamps = building.fixtures
     .filter((f) => f.corridor === S.cross)
     .sort((a, c) => a.unit - c.unit)
-  const spot = lamps.find((f) => f.pos.x > S.pos.x + 9) || lamps[lamps.length - 1]
+  const spot =
+    lamps.find((f) => f.unit % 2 === 1 && f.pos.x > S.pos.x + 7.5) || lamps[lamps.length - 1]
   lamps.forEach((f) => {
     if (f.unit > spot.unit) f.on = false
   })
   spot.on = true
   spot.stutter = 0.8
-  S.crossChase = { phase: 'appear', t: 0, next: spot.unit, speed: 0, gait: 0, step: 0 }
+  S.crossChase = {
+    phase: 'grip',
+    t: 0,
+    x: spot.pos.x,
+    // 体の原点の、今の高さ
+    lift: CLIMB_LOW,
+    next: spot.unit,
+    speed: 0,
+    gait: 0,
+    step: 0,
+  }
   crawler.reset()
-  crawler.group.position.set(spot.pos.x + 0.8, floorY(S.cross), -0.7)
-  crawler.group.rotation.set(0, -Math.PI / 2, 0)
-  crawler.randomPose(0.3)
+  gripHand(0)
+  // 2本目の手は、まだ腰壁の陰にある
+  hands[1].position.set(spot.pos.x - 0.3, floorY(S.cross) + 0.5, RAIL_Z + 0.1)
+  hands[1].visible = false
+  cling(spot.pos.x, CLIMB_LOW)
   crawler.group.visible = true
   sound.flicker()
   sound.suzu(0.14)
+}
+
+/**
+ * 体を引き上げ始める。今の高さから、腰壁を越えかける高さまで
+ */
+const startHaul = (cc) => {
+  cc.phase = 'haul'
+  cc.t = 0
+  cc.from = cc.lift
+  sound.step(0.22, { muffle: 0.3 })
+}
+
+/**
+ * 腰壁の外から、よじ登ってくる。手をかける -> 頭が出て、こちらを見る -> 体を引き上げる -> 明かりが消えて、
+ * 点き直すと廊下に下りている。近づきすぎると、待たずに乗り越えてくる
+ * @returns よじ登っている間は true
+ */
+const updateClimb = (cc) => {
+  const near = S.pos.x > cc.x - 3.5
+  if (cc.phase === 'grip') {
+    // 1本目から少しして、2本目の手がかかる。腰壁のその辺りを見たら、頭が出てくる
+    if (!hands[1].visible && cc.t > 0.45) {
+      gripHand(1)
+      cling(cc.x, CLIMB_LOW)
+    }
+    updateFrustum()
+    climbSphere.center.set(cc.x, floorY(S.cross) + 1.2, 0.3)
+    const seen = frustum.intersectsSphere(climbSphere)
+    if (!near && cc.t < 5 && !(cc.t > 1.3 && seen)) return true
+    cc.phase = 'rise'
+    cc.t = 0
+    return true
+  }
+  if (cc.phase === 'rise') {
+    const k = THREE.MathUtils.smoothstep(cc.t, 0, 1.8)
+    cc.lift = THREE.MathUtils.lerp(CLIMB_LOW, CLIMB_PEEK, k)
+    cling(cc.x, cc.lift)
+    crawler.look(eye, 0.2 + k * 0.4)
+    if (!near && cc.t < 1.8) return true
+    if (near) {
+      startHaul(cc)
+      return true
+    }
+    cc.phase = 'peek'
+    cc.t = 0
+    return true
+  }
+  if (cc.phase === 'peek') {
+    // 頭だけ出して、こちらを見ている。途中で、かくっと首をかしげる
+    cling(cc.x, CLIMB_PEEK)
+    crawler.look(eye, cc.t > 0.55 ? 0.95 : 0.6)
+    if (!near && cc.t < 1.0) return true
+    startHaul(cc)
+    return true
+  }
+  if (cc.phase === 'haul') {
+    // 体を引き上げて、腰壁を越えかける
+    const k = Math.min(1, cc.t / 0.3)
+    cling(cc.x, THREE.MathUtils.lerp(cc.from, CLIMB_HAUL, k * k))
+    crawler.look(eye, 0.95)
+    if (cc.t < 0.3) return true
+    // 明かりが消える。そのあいだに、腰壁を越えて廊下に下りる
+    cc.phase = 'over'
+    cc.t = 0
+    setDark(true)
+    crawler.group.visible = false
+    hands.forEach((h) => {
+      h.visible = false
+    })
+    sound.clunk()
+    sound.step(0.6, { muffle: 0.3, when: 0.1 })
+    sound.step(0.45, { muffle: 0.35, when: 0.24 })
+    return true
+  }
+  if (cc.phase === 'over') {
+    if (cc.t < 0.45) return true
+    setDark(false)
+    const g = crawler.group
+    crawler.reset()
+    g.rotation.set(0, 0, 0)
+    g.position.set(cc.x + 0.85, floorY(S.cross), -0.7)
+    crawler.face(S.pos)
+    crawler.randomPose(0.3)
+    g.visible = true
+    cc.phase = 'appear'
+    cc.t = 0
+    sound.flicker()
+    return true
+  }
+  return false
 }
 
 /**
@@ -2246,7 +2352,12 @@ const crossDeath = () => {
  */
 const endCrossChase = () => {
   const cc = S.crossChase
+  // 明かりが消えている間に終わったら、点け直す
+  if (cc.phase === 'over' || cc.phase === 'black') setDark(false)
   cc.phase = 'done'
+  hands.forEach((h) => {
+    h.visible = false
+  })
   crawler.group.visible = false
   crawler.group.rotation.x = 0
   S.hunted = false
@@ -2256,7 +2367,7 @@ const endCrossChase = () => {
 }
 
 /**
- * 移る階の廊下の、前から這ってくるもの。先の明かりの下からこちらへ這ってきて、通り過ぎた明かりは消えていく。
+ * 移る階の廊下の、前から這ってくるもの。先の明かりの下の腰壁をよじ登ってきて、こちらへ這ってくる。通り過ぎた明かりは消えていく。
  * 目の前まで来ると明かりが消えて、点き直すと、すり抜けてうしろにいる。そこから30秒、歩いた道すじをたどって
  * 追いかけてくる。歩くより速く、走るより少し遅い。かんたんでは、追いつかれても消えるだけ
  */
@@ -2264,12 +2375,13 @@ const updateCrossChase = (dt) => {
   const cc = S.crossChase
   if (!cc || cc.phase === 'done') return
   cc.t += dt
+  if (updateClimb(cc)) return
   const y = floorY(S.cross)
   const g = crawler.group
   if (cc.phase === 'appear') {
-    // 少しのあいだ、明かりの下で、こちらを向いている
+    // 廊下に下りて、少しのあいだ、明かりの下で、こちらを向いている
     crawler.face(S.pos)
-    if (cc.t < 1.4) return
+    if (cc.t < 0.8) return
     cc.phase = 'rush'
     cc.t = 0
     sound.whisper()
@@ -2377,7 +2489,7 @@ const updateCrossChase = (dt) => {
 
 /**
  * 西の階段がふさがっている階。初めて着いた時に、東の階段へ行くように知らせる。
- * 廊下には腰壁をつかむ手があり、半分くらいまで来ると、前から這うものが来る
+ * 廊下を半分くらいまで来ると、先の腰壁を外から這うものがよじ登ってきて、前から来る
  */
 const updateCrossing = (dt) => {
   const f = S.cross
@@ -2385,8 +2497,7 @@ const updateCrossing = (dt) => {
     S.hinted.cross = true
     whisper('工事中か。しかし何かがおかしい。反対側の階段に向かおう。', 4600)
   }
-  updateHands(dt)
-  if (!S.crossChase && S.tag === `C${f}` && S.pos.x > 26 && !S.final) startCrossChase()
+  if (!S.crossChase && S.tag === `C${f}` && S.pos.x > 22 && !S.final) startCrossChase()
   updateCrossChase(dt)
 }
 
